@@ -11,10 +11,9 @@ import tensorflow_probability as tfp
 # Method only for Manual Play
 # kymnasium.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
 
-# v3 Patch Notes
-# 1. Angle Reflection
-# 2. Distance Reward Shaping
-# 3. Number of Stones Reward Shaping
+# v4 Patch Notes
+# 1. Angle Reflection Removed
+# 2. Aiming Reward Shaping
 
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
@@ -36,10 +35,6 @@ def observation_to_input(observation, turn) :
     player_stones[1::3] /= HEIGHT
     opponent_stones[0::3] /= WIDTH
     opponent_stones[1::3] /= HEIGHT
-    
-    if(turn == 1) :  # invert for white
-        player_stones[0::3] = 1.0 - player_stones[0::3]
-        opponent_stones[0::3] = 1.0 - opponent_stones[0::3]
     
     return np.concatenate([player_stones, opponent_stones])  # (18, )
 
@@ -165,10 +160,33 @@ def get_min_distance(observation, turn) :
     min_distance = max_distance
     for player in players :
         for opponent in opponents :
-            dist = np.sqrt((player[0] - opponent[0]) ** 2 + (player[1] - opponent[1]) ** 2)
-            min_distance = min(min_distance, dist)
+            distance = np.sqrt((player[0] - opponent[0]) ** 2 + (player[1] - opponent[1]) ** 2)
+            min_distance = min(min_distance, distance)
     return min_distance
+
+def get_aiming_reward(observation, turn, selection, angle) :
+    if(turn == 0) :
+        players = observation["black"]
+        opponents = observation["white"]
+    else :
+        players = observation["white"]
+        opponents = observation["black"]
+        
+    player_stone = players[selection]
+    if(player_stone[2] == 0) : return 0.0
     
+    alive_opponents = [stone for stone in opponents if stone[2] == 1]
+    if(not alive_opponents) : return 0.0
+    
+    max_cosine_similarity = -1.0  # if aiming directly, cosine similarity is 1.0
+    for opponent in alive_opponents :
+        dx = opponent[0] - player_stone[0]
+        dy = opponent[1] - player_stone[1]
+        target_angle_degree = np.degrees(np.arctan2(dy, dx))
+        cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
+        max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
+        
+    return max_cosine_similarity  # range: [-1.0, 1.0]
 # -------- End of Helper Functions --------
 
 # ---------- Agent Class ----------
@@ -210,14 +228,6 @@ class Agent(kym.Agent) :
         power = max(1.0, power)
         angle = raw_angle * 180.0
         
-        if(turn == 1) :
-            angle += 180.0
-            if(angle > 180.0) : angle -= 360.0
-            # Reflect angle for white side
-            angle = 180.0 - angle
-            if(angle > 180.0) : angle -= 360.0
-            if(angle <= -180.0) : angle += 360.0
-        
         return {
             "turn" : turn,
             "index" : int(selected_index),
@@ -226,11 +236,9 @@ class Agent(kym.Agent) :
         }
     
 class BlackAgent(Agent) :
-    # TODO
     pass
 
 class WhiteAgent(Agent) :
-    # TODO
     pass
 # -------- End of Agent Class --------
 
@@ -280,6 +288,8 @@ def train() :
                 break
                 
             turn = observation["turn"]
+            aiming_reward = 0.0
+            
             if(turn == 0) :
                 action = black_agent.act(observation, info)
                 input_state = observation_to_input(observation, turn)
@@ -297,17 +307,15 @@ def train() :
                 white_records["states"].append(input_state)
                 norm_power = (action["power"] - 1.0) / 2500.0  # Normalize back to (0.0 ~ 1.0)
                 norm_power = max(0.0, norm_power)
-                angle = action["angle"]
-                original_angle = angle - 180.0  # Revert angle adjustment
-                if(original_angle < -180.0) : original_angle += 360.0
-                # Reflect angle for white side
-                original_angle = 180.0 - original_angle
-                if(original_angle > 180.0) : original_angle -= 360.0
-                if(original_angle <= -180.0) : original_angle += 360.0
-                norm_angle = original_angle / 180.0  # Normalize back to (-1.0 ~ 1.0)
+                norm_angle = action["angle"] / 180.0  # Normalize back to (-1.0 ~ 1.0)
                 raw_action = [action["index"], norm_power, norm_angle]
                 white_records["actions"].append(raw_action)
                 white_records["rewards"].append(0)  # Placeholder for reward
+            
+            # Reward by Aiming
+            aiming_reward = get_aiming_reward(observation, turn, action["index"], action["angle"])
+            if(turn == 0) : black_records["rewards"][-1] += aiming_reward
+            else : white_records["rewards"][-1] += aiming_reward
             
             next_observation, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
@@ -362,8 +370,8 @@ def train() :
         
         print(f"Episode {episode + 1}/{episodes} completed | Winner: {winner}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d}", end="\r")
     
-    black_agent.save("./moka_black_v3.keras")
-    white_agent.save("./moka_white_v3.keras")
+    black_agent.save("./moka_black_v4.keras")
+    white_agent.save("./moka_white_v4.keras")
     env.close()
 
 def test() :
@@ -373,8 +381,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v3.keras")
-    white_agent = WhiteAgent.load("./moka_white_v3.keras")
+    black_agent = BlackAgent.load("./moka_black_v4.keras")
+    white_agent = WhiteAgent.load("./moka_white_v4.keras")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
