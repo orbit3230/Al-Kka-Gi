@@ -173,10 +173,10 @@ def get_aiming_reward(observation, turn, selection, angle) :
         opponents = observation["black"]
         
     player_stone = players[selection]
-    if(player_stone[2] == 0) : return 0.0
+    if(player_stone[2] == 0) : return -1.0
     
     alive_opponents = [stone for stone in opponents if stone[2] == 1]
-    if(not alive_opponents) : return 0.0
+    if(not alive_opponents) : return 0.0  # this code should not be reached normally
     
     max_cosine_similarity = -1.0  # if aiming directly, cosine similarity is 1.0
     for opponent in alive_opponents :
@@ -257,7 +257,7 @@ def train() :
     
     black_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
     white_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
-    episodes = 30000
+    episodes = 100000
     max_distance = np.sqrt(600**2 + 600**2)
     
     # Training Loop
@@ -369,6 +369,10 @@ def train() :
         loss_white_val = loss_white.numpy() if isinstance(loss_white, tf.Tensor) else loss_white
         
         print(f"Episode {episode + 1}/{episodes} completed | Winner: {winner}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d}", end="\r")
+        
+        if((episode + 1) % 10000 == 0) :  # temporary save
+            black_agent.save(f"./moka_black_v4_{episode + 1}.keras")
+            white_agent.save(f"./moka_white_v4_{episode + 1}.keras")
     
     black_agent.save("./moka_black_v4.keras")
     white_agent.save("./moka_white_v4.keras")
@@ -381,8 +385,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v4.keras")
-    white_agent = WhiteAgent.load("./moka_white_v4.keras")
+    black_agent = BlackAgent.load("./moka_black_v4_10000.keras")
+    white_agent = WhiteAgent.load("./moka_white_v4_10000.keras")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -400,5 +404,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    train()
+    # train()
     test()
