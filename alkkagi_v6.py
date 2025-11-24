@@ -11,12 +11,9 @@ import tensorflow_probability as tfp
 # Method only for Manual Play
 # kymnasium.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
 
-# v5 Patch Notes
-# 1. observation_to_input - obstacle information addition
-# 2. observation_to_input - oppenent stones sorting
-# 3. action & selection pairing
-# 4. dead stone masking
-
+# v6 Patch Notes
+# 1. Reward Amount Adjustment
+# 2. Erased dead stone information
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
     WIDTH = 600
@@ -29,9 +26,21 @@ def observation_to_input(observation, turn) :
         player = "white"
         opponent = "black"
     
-    player_stones = np.array(observation[player], dtype=np.float32).flatten()  # (9, )
+    player_stones = np.array(observation[player], dtype=np.float32)
+    for i in range(len(player_stones)) :
+        if(player_stones[i][2] == 0) :
+            player_stones[i][0] = -999
+            player_stones[i][1] = -999
+    player_stones = player_stones.flatten()  # (9, )
+    
     # Sort opponent stones by y-coordinate
-    opponent_stones = np.array(sorted(observation[opponent], key=lambda x: x[1]), dtype=np.float32).flatten()  # (9, )
+    opponent_stones = np.array(observation[opponent], dtype=np.float32)
+    for i in range(len(opponent_stones)) :
+        if(opponent_stones[i][2] == 0) :
+            opponent_stones[i][0] = -999
+            opponent_stones[i][1] = -999
+    opponent_stones = sorted(opponent_stones, key=lambda x: (-x[2], x[1])) # alive first, then by y-coordinate
+    opponent_stones = np.array(opponent_stones, dtype=np.float32).flatten()  # (9, )
     obstacles = np.array(observation["obstacles"], dtype=np.float32).flatten()  # (12, )
     
     # Normalize
@@ -117,7 +126,7 @@ def train_by_records(agent, states, masks, actions, returns, optimizer) :
     
     with tf.GradientTape() as tape :
         # Model Inference
-        selection_probs, power_means, power_std_devs, angle_means, angle_std_devs, values = agent.model([states_tensor, mask_tensor])
+        selection_logits, power_means, power_std_devs, angle_means, angle_std_devs, values = agent.model([states_tensor, mask_tensor])
         values = tf.squeeze(values)
         
         # Calculate Advantage (G_t - V(s))
@@ -130,7 +139,7 @@ def train_by_records(agent, states, masks, actions, returns, optimizer) :
         # Actor Loss
         # 1. Stone Selection (Categorical)
         # distribution_selection = tfp.distributions.Categorical(probs=selection_probs) -> NaN issue
-        distribution_selection = tfp.distributions.Categorical(logits=selection_probs)
+        distribution_selection = tfp.distributions.Categorical(logits=selection_logits)
         log_probability_selection = distribution_selection.log_prob(action_indices)
         
         # 2. Power (Normal)
@@ -210,7 +219,7 @@ def get_aiming_reward(observation, turn, selection, angle) :
         cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
         max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
         
-    return max_cosine_similarity  # range: [-1.0, 1.0]
+    return max_cosine_similarity * 0.01  # range: [-0.01 ~ 0.01]
 # -------- End of Helper Functions --------
 
 # ---------- Agent Class ----------
@@ -254,7 +263,7 @@ class Agent(kym.Agent) :
         raw_angle = np.random.normal(selected_angle_mean, selected_angle_std_dev)
         raw_angle = np.clip(raw_angle, -1.0, 1.0)
         
-        # Rescale
+        # RescaleW
         power = raw_power * 2500.0
         power = max(1.0, power)
         angle = raw_angle * 180.0
@@ -288,7 +297,7 @@ def train() :
     
     black_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
     white_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
-    episodes = 10000
+    episodes = 100000
     max_distance = np.sqrt(600**2 + 600**2)
     
     # Training Loop
@@ -359,10 +368,10 @@ def train() :
             old_white_distance = new_white_distance
             new_black_distance = get_min_distance(observation, 0)
             new_white_distance = get_min_distance(observation, 1)
-            distance_reward_black = (old_black_distance - new_black_distance) / max_distance * 10.0
-            distance_reward_white = (old_white_distance - new_white_distance) / max_distance * 10.0
-            distance_reward_black = np.clip(distance_reward_black, -1.0, 1.0)
-            distance_reward_white = np.clip(distance_reward_white, -1.0, 1.0)
+            distance_reward_black = (old_black_distance - new_black_distance) / max_distance * 0.01
+            distance_reward_white = (old_white_distance - new_white_distance) / max_distance * 0.01
+            distance_reward_black = np.clip(distance_reward_black, -0.01, 0.01)
+            distance_reward_white = np.clip(distance_reward_white, -0.01, 0.01)
             if(turn == 0) : black_records["rewards"][-1] += distance_reward_black
             else : white_records["rewards"][-1] += distance_reward_white
             
@@ -371,22 +380,26 @@ def train() :
             old_white_count = new_white_count
             new_black_count = stone_count(observation, "black")
             new_white_count = stone_count(observation, "white")
-            capture_reward_black = (old_white_count - new_white_count)
-            capture_reward_white = (old_black_count - new_black_count)
-            if(turn == 0) : black_records["rewards"][-1] += capture_reward_black
-            else : white_records["rewards"][-1] += capture_reward_white
+            capture_reward_black = (old_black_count - new_black_count)
+            capture_reward_white = (old_white_count - new_white_count)
+            if(turn == 0) :
+                black_records["rewards"][-1] -= capture_reward_black * 3.0
+                black_records["rewards"][-1] += capture_reward_white * 3.0
+            else :
+                white_records["rewards"][-1] -= capture_reward_white * 3.0
+                white_records["rewards"][-1] += capture_reward_black * 3.0
         
         if(time_over) : winner = "draw"
         else : winner = who_is_the_winner(observation)
         if(winner == "black") :
-            black_reward = 1.0
-            white_reward = -1.0
+            black_reward = 10.0
+            white_reward = -10.0
         elif(winner == "white") :
-            black_reward = -1.0
-            white_reward = 1.0
+            black_reward = -10.0
+            white_reward = 10.0
         else :
-            black_reward = -0.1
-            white_reward = -0.1
+            black_reward = -1.0
+            white_reward = -1.0
             
         if(len(black_records["rewards"])) : black_records["rewards"][-1] += black_reward
         if(len(white_records["rewards"])) : white_records["rewards"][-1] += white_reward
@@ -404,11 +417,11 @@ def train() :
         print(f"Episode {episode + 1}/{episodes} completed | Winner: {winner}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d}", end="\r")
         
         if((episode + 1) % 10000 == 0) :  # temporary save
-            black_agent.save(f"./moka_black_v5_{episode + 1}.keras")
-            white_agent.save(f"./moka_white_v5_{episode + 1}.keras")
+            black_agent.save(f"./moka_black_v6_{episode + 1}.keras")
+            white_agent.save(f"./moka_white_v6_{episode + 1}.keras")
     
-    black_agent.save("./moka_black_v5.keras")
-    white_agent.save("./moka_white_v5.keras")
+    black_agent.save("./moka_black_v6.keras")
+    white_agent.save("./moka_white_v6.keras")
     env.close()
 
 def test() :
@@ -418,8 +431,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v5.keras")
-    white_agent = WhiteAgent.load("./moka_white_v5.keras")
+    black_agent = BlackAgent.load("./moka_black_v6.keras")
+    white_agent = WhiteAgent.load("./moka_white_v6.keras")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -437,5 +450,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    # train()
+    train()
     test()
