@@ -19,6 +19,9 @@ import csv
 # 6. Brought the sorting of opponent stones back (by y-coordinate)
 # 7. Dead stone processing after normalization
 # 8. Reward tuning
+#---
+# v12 Patch Notes
+# 1. Reward Minimization Version.
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
     WIDTH = 600
@@ -203,52 +206,52 @@ def train_by_records(agent, states, masks, actions, returns, actor_optimizer, cr
     
     return total_actor_loss, critic_loss, entropy
 
-def get_aiming_reward(observation, turn, selection, angle) :
-    if(turn == 0) :
-        players = observation["black"]
-        opponents = observation["white"]
-    else :
-        players = observation["white"]
-        opponents = observation["black"]
+# def get_aiming_reward(observation, turn, selection, angle) :
+#     if(turn == 0) :
+#         players = observation["black"]
+#         opponents = observation["white"]
+#     else :
+#         players = observation["white"]
+#         opponents = observation["black"]
         
-    player_stone = players[selection]
-    if(player_stone[2] == 0) : return -1.0
+#     player_stone = players[selection]
+#     if(player_stone[2] == 0) : return -1.0
     
-    alive_opponents = [stone for stone in opponents if stone[2] == 1]
-    if(not alive_opponents) : return 0.0  # this code should not be reached normally
+#     alive_opponents = [stone for stone in opponents if stone[2] == 1]
+#     if(not alive_opponents) : return 0.0  # this code should not be reached normally
     
-    max_cosine_similarity = -1.0  # if aiming directly, cosine similarity is 1.0
-    for opponent in alive_opponents :
-        dx = opponent[0] - player_stone[0]
-        dy = opponent[1] - player_stone[1]
-        target_angle_degree = np.degrees(np.arctan2(dy, dx))
-        cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
-        max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
+#     max_cosine_similarity = -1.0  # if aiming directly, cosine similarity is 1.0
+#     for opponent in alive_opponents :
+#         dx = opponent[0] - player_stone[0]
+#         dy = opponent[1] - player_stone[1]
+#         target_angle_degree = np.degrees(np.arctan2(dy, dx))
+#         cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
+#         max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
         
-    return max_cosine_similarity * 0.1  # range: [-0.1 ~ 0.1]
+#     return max_cosine_similarity * 0.1  # range: [-0.1 ~ 0.1]
 
 # return : {is_there_black_collision, is_there_white_collision}
-def collision_detected(observation_before, observation_after) :
-    black_x_before = [stone[0] for stone in observation_before["black"] if stone[2] == 1]
-    black_y_before = [stone[1] for stone in observation_before["black"] if stone[2] == 1]
-    white_x_before = [stone[0] for stone in observation_before["white"] if stone[2] == 1]
-    white_y_before = [stone[1] for stone in observation_before["white"] if stone[2] == 1]
-    black_x_after = [stone[0] for stone in observation_after["black"] if stone[2] == 1]
-    black_y_after = [stone[1] for stone in observation_after["black"] if stone[2] == 1]
-    white_x_after = [stone[0] for stone in observation_after["white"] if stone[2] == 1]
-    white_y_after = [stone[1] for stone in observation_after["white"] if stone[2] == 1]
+# def collision_detected(observation_before, observation_after) :
+#     black_x_before = [stone[0] for stone in observation_before["black"] if stone[2] == 1]
+#     black_y_before = [stone[1] for stone in observation_before["black"] if stone[2] == 1]
+#     white_x_before = [stone[0] for stone in observation_before["white"] if stone[2] == 1]
+#     white_y_before = [stone[1] for stone in observation_before["white"] if stone[2] == 1]
+#     black_x_after = [stone[0] for stone in observation_after["black"] if stone[2] == 1]
+#     black_y_after = [stone[1] for stone in observation_after["black"] if stone[2] == 1]
+#     white_x_after = [stone[0] for stone in observation_after["white"] if stone[2] == 1]
+#     white_y_after = [stone[1] for stone in observation_after["white"] if stone[2] == 1]
     
-    is_there_black_collision = False
-    is_there_white_collision = False
-    for x_b_before, y_b_before, x_b_after, y_b_after in zip(black_x_before, black_y_before, black_x_after, black_y_after) :
-        if(abs(x_b_before - x_b_after) > 1.0 or abs(y_b_before - y_b_after) > 1.0) :
-            is_there_black_collision = True
-            break
-    for x_w_before, y_w_before, x_w_after, y_w_after in zip(white_x_before, white_y_before, white_x_after, white_y_after) :
-        if(abs(x_w_before - x_w_after) > 1.0 or abs(y_w_before - y_w_after) > 1.0) :
-            is_there_white_collision = True
-            break
-    return is_there_black_collision, is_there_white_collision
+#     is_there_black_collision = False
+#     is_there_white_collision = False
+#     for x_b_before, y_b_before, x_b_after, y_b_after in zip(black_x_before, black_y_before, black_x_after, black_y_after) :
+#         if(abs(x_b_before - x_b_after) > 1.0 or abs(y_b_before - y_b_after) > 1.0) :
+#             is_there_black_collision = True
+#             break
+#     for x_w_before, y_w_before, x_w_after, y_w_after in zip(white_x_before, white_y_before, white_x_after, white_y_after) :
+#         if(abs(x_w_before - x_w_after) > 1.0 or abs(y_w_before - y_w_after) > 1.0) :
+#             is_there_white_collision = True
+#             break
+#     return is_there_black_collision, is_there_white_collision
 # -------- End of Helper Functions --------
 
 # ---------- Agent Class ----------
@@ -344,7 +347,7 @@ def train() :
     episodes = 100000
     
     # Open CSV file for logging
-    log_filename = "training_log_v11.csv"
+    log_filename = "training_log_v12.csv"
     with open(log_filename, mode='w', newline='') as log_file:
         log_writer = csv.writer(log_file)
         log_writer.writerow([
@@ -369,13 +372,13 @@ def train() :
         
         black_records = {"states" : [], "masks" : [], "actions" : [], "rewards" : []}
         white_records = {"states" : [], "masks" : [], "actions" : [], "rewards" : []}
-        old_black_count = stone_count(observation, "black")
-        old_white_count = stone_count(observation, "white")
-        new_black_count = old_black_count
-        new_white_count = old_white_count
+        # old_black_count = stone_count(observation, "black")
+        # old_white_count = stone_count(observation, "white")
+        # new_black_count = old_black_count
+        # new_white_count = old_white_count
         
         step_count = 0
-        step_penalty = 0.05  # Modified in v10
+        step_penalty = 0.005  # Modified in v10
         time_over = False 
         
         # 0 : Black Agent Training Phase (White : Frozen)
@@ -386,12 +389,12 @@ def train() :
         
         while not done :
             step_count += 1
-            if(step_count >= 300) :
+            if(step_count >= 1000) :
                 time_over = True
                 break
                 
             turn = observation["turn"]
-            aiming_reward = 0.0
+            # aiming_reward = 0.0
             
             if(turn == 0) :
                 # when black doesn't train, use deterministic policy
@@ -424,46 +427,46 @@ def train() :
             else : white_records["rewards"][-1] -= step_penalty
             
             # Reward by Aiming
-            aiming_reward = get_aiming_reward(observation, turn, action["index"], action["angle"])
-            if(turn == 0) : black_records["rewards"][-1] += aiming_reward
-            else : white_records["rewards"][-1] += aiming_reward
+            # aiming_reward = get_aiming_reward(observation, turn, action["index"], action["angle"])
+            # if(turn == 0) : black_records["rewards"][-1] += aiming_reward
+            # else : white_records["rewards"][-1] += aiming_reward
             
             next_observation, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-            is_there_black_collision, is_there_white_collision = collision_detected(observation, next_observation)
+            # is_there_black_collision, is_there_white_collision = collision_detected(observation, next_observation)
             observation = next_observation
             
             # Reward by Stone Capture
-            old_black_count = new_black_count
-            old_white_count = new_white_count
-            new_black_count = stone_count(observation, "black")
-            new_white_count = stone_count(observation, "white")
-            capture_reward_black = (old_black_count - new_black_count)
-            capture_reward_white = (old_white_count - new_white_count)
-            if(turn == 0) :
-                black_records["rewards"][-1] -= capture_reward_black * 5.0
-                black_records["rewards"][-1] += capture_reward_white * 5.0
-            else :
-                white_records["rewards"][-1] -= capture_reward_white * 5.0
-                white_records["rewards"][-1] += capture_reward_black * 5.0
+            # old_black_count = new_black_count
+            # old_white_count = new_white_count
+            # new_black_count = stone_count(observation, "black")
+            # new_white_count = stone_count(observation, "white")
+            # capture_reward_black = (old_black_count - new_black_count)
+            # capture_reward_white = (old_white_count - new_white_count)
+            # if(turn == 0) :
+            #     black_records["rewards"][-1] -= capture_reward_black * 5.0
+            #     black_records["rewards"][-1] += capture_reward_white * 5.0
+            # else :
+            #     white_records["rewards"][-1] -= capture_reward_white * 5.0
+            #     white_records["rewards"][-1] += capture_reward_black * 5.0
                 
             # Reward by Collision
-            if(turn == 0 and is_there_white_collision) :
-                black_records["rewards"][-1] += 0.2
-            elif(turn == 1 and is_there_black_collision) :
-                white_records["rewards"][-1] += 0.2
+            # if(turn == 0 and is_there_white_collision) :
+            #     black_records["rewards"][-1] += 0.2
+            # elif(turn == 1 and is_there_black_collision) :
+            #     white_records["rewards"][-1] += 0.2
         
         if(time_over) : winner = "draw"
         else : winner = who_is_the_winner(observation)
         if(winner == "black") :
-            black_reward = 100.0
-            white_reward = -50.0
+            black_reward = 1.0
+            white_reward = -1.0
         elif(winner == "white") :
-            black_reward = -50.0
-            white_reward = 100.0
+            black_reward = -1.0
+            white_reward = 1.0
         else :
-            black_reward = -50.0
-            white_reward = -50.0
+            black_reward = -1.0
+            white_reward = -1.0
             
         if(len(black_records["rewards"])) : black_records["rewards"][-1] += black_reward
         if(len(white_records["rewards"])) : white_records["rewards"][-1] += white_reward
@@ -498,11 +501,11 @@ def train() :
         print(f"Episode {episode + 1}/{episodes} completed | Winner: {winner:5s}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d} | Phase: {phase:15s}", end="\r")
         
         if((episode + 1) % 10000 == 0) :  # temporary save
-            black_agent.save(f"./moka_black_v11_{episode + 1}")
-            white_agent.save(f"./moka_white_v11_{episode + 1}")
+            black_agent.save(f"./moka_black_v12_{episode + 1}")
+            white_agent.save(f"./moka_white_v12_{episode + 1}")
     
-    black_agent.save("./moka_black_v11")
-    white_agent.save("./moka_white_v11")
+    black_agent.save("./moka_black_v12")
+    white_agent.save("./moka_white_v12")
     env.close()
 
 def test() :
@@ -512,8 +515,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v11")
-    white_agent = WhiteAgent.load("./moka_white_v11")
+    black_agent = BlackAgent.load("./moka_black_v12")
+    white_agent = WhiteAgent.load("./moka_white_v12")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
