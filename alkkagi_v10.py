@@ -11,7 +11,7 @@ import tensorflow_probability as tfp
 # Method only for Manual Play
 # kymnasium.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
 
-# v9 Patch Notes
+# v10 Patch Notes
 # 1. Modified Reward Scale
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
@@ -299,7 +299,7 @@ def train() :
         new_white_count = old_white_count
         
         step_count = 0
-        step_penalty = 0.2
+        step_penalty = 0.5  # Modified in v10
         time_over = False 
         while not done :
             step_count += 1
@@ -370,8 +370,8 @@ def train() :
             black_reward = -10.0
             white_reward = 10.0
         else :
-            black_reward = -50.0
-            white_reward = -50.0
+            black_reward = -100.0
+            white_reward = -100.0
             
         if(len(black_records["rewards"])) : black_records["rewards"][-1] += black_reward
         if(len(white_records["rewards"])) : white_records["rewards"][-1] += white_reward
@@ -389,11 +389,11 @@ def train() :
         print(f"Episode {episode + 1}/{episodes} completed | Winner: {winner}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d}", end="\r")
         
         if((episode + 1) % 10000 == 0) :  # temporary save
-            black_agent.save(f"./moka_black_v9_{episode + 1}.keras")
-            white_agent.save(f"./moka_white_v9_{episode + 1}.keras")
+            black_agent.save(f"./moka_black_v10_{episode + 1}.keras")
+            white_agent.save(f"./moka_white_v10_{episode + 1}.keras")
     
-    black_agent.save("./moka_black_v9.keras")
-    white_agent.save("./moka_white_v9.keras")
+    black_agent.save("./moka_black_v10.keras")
+    white_agent.save("./moka_white_v10.keras")
     env.close()
 
 def test() :
@@ -403,8 +403,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v9_10000.keras")
-    white_agent = WhiteAgent.load("./moka_white_v9_10000.keras")
+    black_agent = BlackAgent.load("./moka_black_v10_10000.keras")
+    white_agent = WhiteAgent.load("./moka_white_v10_10000.keras")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
