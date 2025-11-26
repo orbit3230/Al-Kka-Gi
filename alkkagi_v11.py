@@ -107,7 +107,7 @@ def build_actor_critic_model(input_shape) :
     
     value = keras.layers.Dense(1, name="value_out")(critic_common)
     critic_model = keras.Model(
-        inputs = [inputs, mask_input],
+        inputs = inputs,
         outputs = value
     )
     # ----------
@@ -142,7 +142,7 @@ def train_by_records(agent, states, masks, actions, returns, actor_optimizer, cr
     
     # 1. Critic Update
     with tf.GradientTape() as tape_critic :
-        values = agent.critic([states_tensor, mask_tensor])
+        values = agent.critic(states_tensor)
         values = tf.squeeze(values)
         huber_loss = tf.keras.losses.Huber()
         critic_loss = huber_loss(returns_tensor, values)
@@ -512,8 +512,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v11")
-    white_agent = WhiteAgent.load("./moka_white_v11")
+    black_agent = BlackAgent.load("./moka_black_v11_10000")
+    white_agent = WhiteAgent.load("./moka_white_v11_10000")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -531,5 +531,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    train()
+    # train()
     test()
