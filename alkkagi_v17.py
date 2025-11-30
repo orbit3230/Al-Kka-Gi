@@ -51,6 +51,9 @@ import os
 # 1. (CANCELED) Do NOT Use Deterministic Policy When Training
 # 2. Black & White Agent simultaneous learning during first 10000 episodes
 # 3. Added Survival Bonus
+# 4. Removed Step Penalty
+# 5. Removed Distance Reward
+# 6. Restored Aiming Reward
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
     WIDTH = 600
@@ -249,29 +252,30 @@ def train_by_records(agent, states, masks, actions, returns, actor_optimizer, cr
     
     return total_actor_loss, critic_loss, entropy
 
-# def get_aiming_reward(observation, turn, selection, angle) :
-#     if(turn == 0) :
-#         players = observation["black"]
-#         opponents = observation["white"]
-#     else :
-#         players = observation["white"]
-#         opponents = observation["black"]
+def get_aiming_reward(observation, turn, selection, angle) :
+    if(turn == 0) :
+        players = observation["black"]
+        opponents = observation["white"]
+    else :
+        players = observation["white"]
+        opponents = observation["black"]
         
-#     player_stone = players[selection]
-#     if(player_stone[2] == 0) : return -1.0
+    player_stone = players[selection]
+    if(player_stone[2] == 0) : return -1.0
     
-#     alive_opponents = [stone for stone in opponents if stone[2] == 1]
-#     if(not alive_opponents) : return 0.0  # this code should not be reached normally
+    alive_opponents = [stone for stone in opponents if stone[2] == 1]
+    if(not alive_opponents) : return 0.0  # this code should not be reached normally
     
-#     max_cosine_similarity = -1.0  # if aiming directly, cosine similarity is 1.0
-#     for opponent in alive_opponents :
-#         dx = opponent[0] - player_stone[0]
-#         dy = opponent[1] - player_stone[1]
-#         target_angle_degree = np.degrees(np.arctan2(dy, dx))
-#         cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
-#         max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
+    max_cosine_similarity = -1.0  # if aiming directly, cosine similarity is 1.0
+    for opponent in alive_opponents :
+        dx = opponent[0] - player_stone[0]
+        dy = opponent[1] - player_stone[1]
+        target_angle_degree = np.degrees(np.arctan2(dy, dx))
+        cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
+        max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
         
-#     return max_cosine_similarity * 0.1  # range: [-0.1 ~ 0.1]
+    # [0.0, 2.0]
+    return (max_cosine_similarity + 1.0)
 
 # return : {is_there_black_collision, is_there_white_collision}
 def collision_detected(observation_before, observation_after) :
@@ -479,7 +483,7 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         white_hit_count = 0
         GAMMA = 0.99
         # Made Draw's current value same regardless of episode length
-        step_penalty = 0.002
+        # step_penalty = 0.000  # removed
         time_over = False 
         
         min_power = 500.0
@@ -540,13 +544,13 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
                 white_records["rewards"].append(0)  # Placeholder for reward (must be +=, not =)
                 
             # Step Penalty
-            if(turn == 0) : black_records["rewards"][-1] -= step_penalty
-            else : white_records["rewards"][-1] -= step_penalty
+            # if(turn == 0) : black_records["rewards"][-1] -= step_penalty
+            # else : white_records["rewards"][-1] -= step_penalty
             
             # Reward by Aiming
-            # aiming_reward = get_aiming_reward(observation, turn, action["index"], action["angle"])
-            # if(turn == 0) : black_records["rewards"][-1] += aiming_reward
-            # else : white_records["rewards"][-1] += aiming_reward
+            aiming_reward = get_aiming_reward(observation, turn, action["index"], action["angle"])
+            if(turn == 0) : black_records["rewards"][-1] += aiming_reward
+            else : white_records["rewards"][-1] += aiming_reward
             
             distance_before = nearest_distance(observation, turn, action["index"])
             next_observation, reward, terminated, truncated, info = env.step(action)
@@ -555,31 +559,31 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             observation = next_observation
             distance_after = nearest_distance(observation, turn, action["index"])
             
-            engage_distance = 100.0
-            approach_scale = 0.05  # +- 0.05
-            knockback_scale = 1.0  # +- 1.0
+            # engage_distance = 100.0
+            # approach_scale = 0.05  # +- 0.05
+            knockback_scale = 2.0  # +- 2.0
             # Reward by Distance (Only when out of the engage distance)
-            if((distance_before > engage_distance) and (distance_after > engage_distance)) :
-                delta_distance = distance_before - distance_after
-                distance_reward = approach_scale * np.tanh(delta_distance / 50.0)
-                if(turn == 0) : black_records["rewards"][-1] += distance_reward
-                else : white_records["rewards"][-1] += distance_reward
+            # if((distance_before > engage_distance) and (distance_after > engage_distance)) :
+            #     delta_distance = distance_before - distance_after
+            #     distance_reward = approach_scale * np.tanh(delta_distance / 50.0)
+            #     if(turn == 0) : black_records["rewards"][-1] += distance_reward
+            #     else : white_records["rewards"][-1] += distance_reward
                 
             # Reward by Collision (Knockback)            
             if(turn == 0 and is_there_white_collision) :
                 black_hit_count += 1
-                black_records["rewards"][-1] += 1.0  # collision constant reward
+                black_records["rewards"][-1] += 10.0  # collision constant reward
                 if(distance_before < distance_after) :  # opponent stone knocked back
                     delta_distance = distance_after - distance_before
                     knockback_reward = knockback_scale * np.tanh(delta_distance / 50.0)
-                    black_records["rewards"][-1] += knockback_reward
+                    black_records["rewards"][-1] += knockback_reward * 5.0
             elif(turn == 1 and is_there_black_collision) :
                 white_hit_count += 1
-                white_records["rewards"][-1] += 1.0  # collision constant reward
+                white_records["rewards"][-1] += 10.0  # collision constant reward
                 if(distance_before < distance_after) :  # opponent stone knocked back
                     delta_distance = distance_after - distance_before
                     knockback_reward = knockback_scale * np.tanh(delta_distance / 50.0)
-                    white_records["rewards"][-1] += knockback_reward
+                    white_records["rewards"][-1] += knockback_reward * 5.0
                 
             # Reward by Stone Capture
             old_black_count = new_black_count
@@ -589,18 +593,18 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             capture_reward_black = (old_black_count - new_black_count)
             capture_reward_white = (old_white_count - new_white_count)
             if(turn == 0) :
-                black_records["rewards"][-1] -= capture_reward_black * 3.0  # self dying penalty
+                black_records["rewards"][-1] -= capture_reward_black * 8.0  # self dying penalty
                 black_self_dying_count += capture_reward_black
-                black_records["rewards"][-1] += capture_reward_white * 3.0  # opponent capture reward
+                black_records["rewards"][-1] += capture_reward_white * 30.0  # opponent capture reward
                 black_kill_count += capture_reward_white
             else :
-                white_records["rewards"][-1] -= capture_reward_white * 3.0  # self dying penalty
+                white_records["rewards"][-1] -= capture_reward_white * 8.0  # self dying penalty
                 white_self_dying_count += capture_reward_white
-                white_records["rewards"][-1] += capture_reward_black * 3.0  # opponent capture reward
+                white_records["rewards"][-1] += capture_reward_black * 30.0  # opponent capture reward
                 white_kill_count += capture_reward_black
                 
             # Reward by Survival
-            survival_bonus = 0.001
+            survival_bonus = 0.1
             if(turn == 0) :
                 alive_stones = stone_count(observation, "black")
                 black_records["rewards"][-1] += alive_stones * survival_bonus
@@ -612,15 +616,15 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         else : winner = who_is_the_winner(observation)
         if(winner == "black") :
             black_survival_count = stone_count(observation, "black")
-            black_reward = 1.0 + (0.5 * black_survival_count)
+            black_reward = 1.0 + (5.0 * black_survival_count)
             white_reward = -1.5
         elif(winner == "white") :
             white_survival_count = stone_count(observation, "white")
             black_reward = -1.5
-            white_reward = 1.0 + (0.5 * white_survival_count)
+            white_reward = 1.0 + (5.0 * white_survival_count)
         else :
-            black_reward = -1.0
-            white_reward = -1.0
+            black_reward = -1.0 + (2.0 * stone_count(observation, "black"))
+            white_reward = -1.0 + (2.0 * stone_count(observation, "white"))
             
         # if(len(black_records["rewards"])) : black_records["rewards"][-1] += black_reward
         # if(len(white_records["rewards"])) : white_records["rewards"][-1] += white_reward
