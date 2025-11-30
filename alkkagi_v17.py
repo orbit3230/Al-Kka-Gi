@@ -46,6 +46,11 @@ import os
 # 3. Win/Lose/Draw Penalty Adjustment
 # 4. Added Distance Reward
 # 5. Layer 256 -> 512
+# ---
+# v17 Patch Notes
+# 1. (CANCELED) Do NOT Use Deterministic Policy When Training
+# 2. Black & White Agent simultaneous learning during first 10000 episodes
+# 3. Added Survival Bonus
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
     WIDTH = 600
@@ -426,10 +431,11 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
     
     # Cross-Training
     cross_frequency = 500
+    simultaneous_learning_episodes = 10000
     episodes = 100000
     
     # Open CSV file for logging
-    log_filename = "training_log_v16.csv"
+    log_filename = "training_log_v17.csv"
     file_mode = 'a' if (resume_path_black and resume_path_white) and os.path.exists(log_filename) else 'w'
     with open(log_filename, mode=file_mode, newline='') as log_file:
         log_writer = csv.writer(log_file)
@@ -484,6 +490,9 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         training_phase = (episode // cross_frequency) % 2
         black_training_phase = (training_phase == 0)
         white_training_phase = (training_phase == 1)
+        if(episode < simultaneous_learning_episodes) :
+            black_training_phase = True
+            white_training_phase = True
         
         while not done :
             step_count += 1
@@ -496,7 +505,9 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             
             if(turn == 0) :
                 # when black doesn't train, use deterministic policy
+                # test ver. v17 (CANCELED)
                 action = black_agent.act(observation, info, deterministic = not black_training_phase)
+                # action = black_agent.act(observation, info, deterministic = False)
                 input_state, input_mask = observation_to_input(observation, turn)
                 black_records["states"].append(input_state)
                 black_records["masks"].append(input_mask)
@@ -512,7 +523,9 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
                 
             else :
                 # when white doesn't train, use deterministic policy
+                # test ver. v17 (CANCELED)
                 action = white_agent.act(observation, info, deterministic = not white_training_phase)
+                # action = white_agent.act(observation, info, deterministic = False)
                 input_state, input_mask = observation_to_input(observation, turn)
                 white_records["states"].append(input_state)
                 white_records["masks"].append(input_mask)
@@ -585,15 +598,26 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
                 white_self_dying_count += capture_reward_white
                 white_records["rewards"][-1] += capture_reward_black * 3.0  # opponent capture reward
                 white_kill_count += capture_reward_black
+                
+            # Reward by Survival
+            survival_bonus = 0.001
+            if(turn == 0) :
+                alive_stones = stone_count(observation, "black")
+                black_records["rewards"][-1] += alive_stones * survival_bonus
+            else :
+                alive_stones = stone_count(observation, "white")
+                white_records["rewards"][-1] += alive_stones * survival_bonus
         
         if(time_over) : winner = "draw"
         else : winner = who_is_the_winner(observation)
         if(winner == "black") :
-            black_reward = 1.5
+            black_survival_count = stone_count(observation, "black")
+            black_reward = 1.0 + (0.5 * black_survival_count)
             white_reward = -1.5
         elif(winner == "white") :
+            white_survival_count = stone_count(observation, "white")
             black_reward = -1.5
-            white_reward = 1.5
+            white_reward = 1.0 + (0.5 * white_survival_count)
         else :
             black_reward = -1.0
             white_reward = -1.0
@@ -609,15 +633,13 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
                 black_returns = calculate_returns(black_records["rewards"], gamma=GAMMA)
                 if(len(black_returns) == len(black_records["states"])+1) : # remove the last reward used for bootstrapping
                     black_returns = black_returns[:-1]
-                for _ in range(3) :  # Mini Batch Training
-                    loss_black, critic_loss_black, entropy_black = train_by_records(black_agent, np.array(black_records["states"]), np.array(black_records["masks"]), np.array(black_records["actions"]), black_returns, black_actor_optimizer, black_critic_optimizer)
+                loss_black, critic_loss_black, entropy_black = train_by_records(black_agent, np.array(black_records["states"]), np.array(black_records["masks"]), np.array(black_records["actions"]), black_returns, black_actor_optimizer, black_critic_optimizer)
         if(white_training_phase) :
             if(len(white_records["states"]) > 0) :
                 white_returns = calculate_returns(white_records["rewards"], gamma=GAMMA)
                 if(len(white_returns) == len(white_records["states"])+1) : # remove the last reward used for bootstrapping
                     white_returns = white_returns[:-1]
-                for _ in range(3) :  # Mini Batch Training
-                    loss_white, critic_loss_white, entropy_white = train_by_records(white_agent, np.array(white_records["states"]), np.array(white_records["masks"]), np.array(white_records["actions"]), white_returns, white_actor_optimizer, white_critic_optimizer)
+                loss_white, critic_loss_white, entropy_white = train_by_records(white_agent, np.array(white_records["states"]), np.array(white_records["masks"]), np.array(white_records["actions"]), white_returns, white_actor_optimizer, white_critic_optimizer)
             
         loss_black_val = loss_black.numpy() if isinstance(loss_black, tf.Tensor) else loss_black
         loss_white_val = loss_white.numpy() if isinstance(loss_white, tf.Tensor) else loss_white
@@ -643,11 +665,11 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         print(f"Episode {episode + 1}/{start_episode + episodes} completed | Winner: {winner:5s}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d} | Phase: {phase:15s}", end="\r")
         
         if((episode + 1) % 10000 == 0) :  # temporary save
-            black_agent.save(f"./moka_black_v16_{episode + 1}")
-            white_agent.save(f"./moka_white_v16_{episode + 1}")
+            black_agent.save(f"./moka_black_v17_{episode + 1}")
+            white_agent.save(f"./moka_white_v17_{episode + 1}")
     
-    black_agent.save("./moka_black_v16")
-    white_agent.save("./moka_white_v16")
+    black_agent.save("./moka_black_v17")
+    white_agent.save("./moka_white_v17")
     env.close()
 
 def test() :
@@ -657,8 +679,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v16_20000")
-    white_agent = WhiteAgent.load("./moka_white_v16_20000")
+    black_agent = BlackAgent.load("./moka_black_v17")
+    white_agent = WhiteAgent.load("./moka_white_v17")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
