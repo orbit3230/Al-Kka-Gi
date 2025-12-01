@@ -58,6 +58,7 @@ import os
 # v18 Patch Notes
 # 1. Restored Step Penalty 
 # 2. Removed all Reward Mechanics except win/lose & step penalty
+# 3. Lower Learning Rate
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
     WIDTH = 600
@@ -346,6 +347,15 @@ class Agent(kym.Agent) :
         # Model Inference
         selection_logits, power_mean, power_std_dev, angle_mean, angle_std_dev = self.actor([state_tensor, mask_tensor])
         
+        # debug
+        # print("turn : ", 'black' if turn == 0 else 'white')
+        # print("selection_logits : ", selection_logits.numpy()[0])
+        # print("power_mean : ", power_mean.numpy()[0])
+        # print("power_std_dev : ", power_std_dev.numpy()[0])
+        # print("angle_mean : ", angle_mean.numpy()[0])
+        # print("angle_std_dev : ", angle_std_dev.numpy()[0])
+        # print("---------------------------")
+        
         # Stone Selection
         if(deterministic) : selected_index = np.argmax(selection_logits.numpy()[0])
         else :
@@ -429,10 +439,10 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
     black_agent = BlackAgent(model=(black_actor_model, black_critic_model))
     white_agent = WhiteAgent(model=(white_actor_model, white_critic_model))
     
-    black_actor_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
-    black_critic_optimizer = keras.optimizers.Adam(learning_rate = 0.001, clipnorm=1.0)
-    white_actor_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
-    white_critic_optimizer = keras.optimizers.Adam(learning_rate = 0.001, clipnorm=1.0)
+    black_actor_optimizer = keras.optimizers.Adam(learning_rate = 0.00003, clipnorm=1.0)
+    black_critic_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
+    white_actor_optimizer = keras.optimizers.Adam(learning_rate = 0.00003, clipnorm=1.0)
+    white_critic_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
     # actor_optimizer = keras.optimizers.Adam(learning_rate = 0.0001, clipnorm=1.0)
     # critic_optimizer = keras.optimizers.Adam(learning_rate = 0.001, clipnorm=1.0)
     
@@ -472,10 +482,10 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         
         black_records = {"states" : [], "masks" : [], "actions" : [], "rewards" : []}
         white_records = {"states" : [], "masks" : [], "actions" : [], "rewards" : []}
-        # old_black_count = stone_count(observation, "black")
-        # old_white_count = stone_count(observation, "white")
-        # new_black_count = old_black_count
-        # new_white_count = old_white_count
+        old_black_count = stone_count(observation, "black")
+        old_white_count = stone_count(observation, "white")
+        new_black_count = old_black_count
+        new_white_count = old_white_count
         
         step_count = 0
         black_self_dying_count = 0
@@ -585,22 +595,22 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             #         white_records["rewards"][-1] += knockback_reward * 5.0
                 
             # Reward by Stone Capture
-            # old_black_count = new_black_count
-            # old_white_count = new_white_count
-            # new_black_count = stone_count(observation, "black")
-            # new_white_count = stone_count(observation, "white")
-            # capture_reward_black = (old_black_count - new_black_count)
-            # capture_reward_white = (old_white_count - new_white_count)
-            # if(turn == 0) :
+            old_black_count = new_black_count
+            old_white_count = new_white_count
+            new_black_count = stone_count(observation, "black")
+            new_white_count = stone_count(observation, "white")
+            capture_reward_black = (old_black_count - new_black_count)
+            capture_reward_white = (old_white_count - new_white_count)
+            if(turn == 0) :
             #     black_records["rewards"][-1] -= capture_reward_black * 8.0  # self dying penalty
-            #     black_self_dying_count += capture_reward_black
+                black_self_dying_count += capture_reward_black
             #     black_records["rewards"][-1] += capture_reward_white * 30.0  # opponent capture reward
-            #     black_kill_count += capture_reward_white
-            # else :
+                black_kill_count += capture_reward_white
+            else :
             #     white_records["rewards"][-1] -= capture_reward_white * 8.0  # self dying penalty
-            #     white_self_dying_count += capture_reward_white
+                white_self_dying_count += capture_reward_white
             #     white_records["rewards"][-1] += capture_reward_black * 30.0  # opponent capture reward
-            #     white_kill_count += capture_reward_black
+                white_kill_count += capture_reward_black
                 
             # Reward by Survival
             # survival_bonus = 0.1
@@ -636,15 +646,13 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
                 black_returns = calculate_returns(black_records["rewards"], gamma=GAMMA)
                 if(len(black_returns) == len(black_records["states"])+1) : # remove the last reward used for bootstrapping
                     black_returns = black_returns[:-1]
-                for _ in range(3) :
-                    loss_black, critic_loss_black, entropy_black = train_by_records(black_agent, np.array(black_records["states"]), np.array(black_records["masks"]), np.array(black_records["actions"]), black_returns, black_actor_optimizer, black_critic_optimizer)
+                loss_black, critic_loss_black, entropy_black = train_by_records(black_agent, np.array(black_records["states"]), np.array(black_records["masks"]), np.array(black_records["actions"]), black_returns, black_actor_optimizer, black_critic_optimizer)
         if(white_training_phase) :
             if(len(white_records["states"]) > 0) :
                 white_returns = calculate_returns(white_records["rewards"], gamma=GAMMA)
                 if(len(white_returns) == len(white_records["states"])+1) : # remove the last reward used for bootstrapping
                     white_returns = white_returns[:-1]
-                for _ in range(3) :
-                    loss_white, critic_loss_white, entropy_white = train_by_records(white_agent, np.array(white_records["states"]), np.array(white_records["masks"]), np.array(white_records["actions"]), white_returns, white_actor_optimizer, white_critic_optimizer)
+                loss_white, critic_loss_white, entropy_white = train_by_records(white_agent, np.array(white_records["states"]), np.array(white_records["masks"]), np.array(white_records["actions"]), white_returns, white_actor_optimizer, white_critic_optimizer)
             
         loss_black_val = loss_black.numpy() if isinstance(loss_black, tf.Tensor) else loss_black
         loss_white_val = loss_white.numpy() if isinstance(loss_white, tf.Tensor) else loss_white
@@ -684,8 +692,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v18")
-    white_agent = WhiteAgent.load("./moka_white_v18")
+    black_agent = BlackAgent.load("./moka_black_v18_50000")
+    white_agent = WhiteAgent.load("./moka_white_v18_50000")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
