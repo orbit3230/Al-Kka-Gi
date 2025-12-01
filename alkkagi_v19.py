@@ -59,6 +59,10 @@ import os
 # 1. Restored Step Penalty 
 # 2. Removed all Reward Mechanics except win/lose & step penalty
 # 3. Lower Learning Rate
+# ---
+# v19 Patch Notes
+# 1. No Cross-Training. Always train both agents. (Test)
+# 2. Added Small Reward for Collision & Kill
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
     WIDTH = 600
@@ -282,27 +286,27 @@ def train_by_records(agent, states, masks, actions, returns, actor_optimizer, cr
 #     return (max_cosine_similarity + 1.0)
 
 # return : {is_there_black_collision, is_there_white_collision}
-# def collision_detected(observation_before, observation_after) :
-#     black_x_before = [stone[0] for stone in observation_before["black"] if stone[2] == 1]
-#     black_y_before = [stone[1] for stone in observation_before["black"] if stone[2] == 1]
-#     white_x_before = [stone[0] for stone in observation_before["white"] if stone[2] == 1]
-#     white_y_before = [stone[1] for stone in observation_before["white"] if stone[2] == 1]
-#     black_x_after = [stone[0] for stone in observation_after["black"] if stone[2] == 1]
-#     black_y_after = [stone[1] for stone in observation_after["black"] if stone[2] == 1]
-#     white_x_after = [stone[0] for stone in observation_after["white"] if stone[2] == 1]
-#     white_y_after = [stone[1] for stone in observation_after["white"] if stone[2] == 1]
+def collision_detected(observation_before, observation_after) :
+    black_x_before = [stone[0] for stone in observation_before["black"] if stone[2] == 1]
+    black_y_before = [stone[1] for stone in observation_before["black"] if stone[2] == 1]
+    white_x_before = [stone[0] for stone in observation_before["white"] if stone[2] == 1]
+    white_y_before = [stone[1] for stone in observation_before["white"] if stone[2] == 1]
+    black_x_after = [stone[0] for stone in observation_after["black"] if stone[2] == 1]
+    black_y_after = [stone[1] for stone in observation_after["black"] if stone[2] == 1]
+    white_x_after = [stone[0] for stone in observation_after["white"] if stone[2] == 1]
+    white_y_after = [stone[1] for stone in observation_after["white"] if stone[2] == 1]
     
-#     is_there_black_collision = False
-#     is_there_white_collision = False
-#     for x_b_before, y_b_before, x_b_after, y_b_after in zip(black_x_before, black_y_before, black_x_after, black_y_after) :
-#         if(abs(x_b_before - x_b_after) > 1.0 or abs(y_b_before - y_b_after) > 1.0) :
-#             is_there_black_collision = True
-#             break
-#     for x_w_before, y_w_before, x_w_after, y_w_after in zip(white_x_before, white_y_before, white_x_after, white_y_after) :
-#         if(abs(x_w_before - x_w_after) > 1.0 or abs(y_w_before - y_w_after) > 1.0) :
-#             is_there_white_collision = True
-#             break
-#     return is_there_black_collision, is_there_white_collision
+    is_there_black_collision = False
+    is_there_white_collision = False
+    for x_b_before, y_b_before, x_b_after, y_b_after in zip(black_x_before, black_y_before, black_x_after, black_y_after) :
+        if(abs(x_b_before - x_b_after) > 1.0 or abs(y_b_before - y_b_after) > 1.0) :
+            is_there_black_collision = True
+            break
+    for x_w_before, y_w_before, x_w_after, y_w_after in zip(white_x_before, white_y_before, white_x_after, white_y_after) :
+        if(abs(x_w_before - x_w_after) > 1.0 or abs(y_w_before - y_w_after) > 1.0) :
+            is_there_white_collision = True
+            break
+    return is_there_black_collision, is_there_white_collision
 
 # def nearest_distance(observation, turn, selection) :
 #     player = "black" if turn == 0 else "white"
@@ -348,13 +352,13 @@ class Agent(kym.Agent) :
         selection_logits, power_mean, power_std_dev, angle_mean, angle_std_dev = self.actor([state_tensor, mask_tensor])
         
         # debug
-        print("turn : ", 'black' if turn == 0 else 'white')
-        print("selection_logits : ", selection_logits.numpy()[0])
-        print("power_mean : ", power_mean.numpy()[0])
-        print("power_std_dev : ", power_std_dev.numpy()[0])
-        print("angle_mean : ", angle_mean.numpy()[0])
-        print("angle_std_dev : ", angle_std_dev.numpy()[0])
-        print("---------------------------")
+        # print("turn : ", 'black' if turn == 0 else 'white')
+        # print("selection_logits : ", selection_logits.numpy()[0])
+        # print("power_mean : ", power_mean.numpy()[0])
+        # print("power_std_dev : ", power_std_dev.numpy()[0])
+        # print("angle_mean : ", angle_mean.numpy()[0])
+        # print("angle_std_dev : ", angle_std_dev.numpy()[0])
+        # print("---------------------------")
         
         # Stone Selection
         if(deterministic) : selected_index = np.argmax(selection_logits.numpy()[0])
@@ -452,7 +456,7 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
     episodes = 500000
     
     # Open CSV file for logging
-    log_filename = "training_log_v18.csv"
+    log_filename = "training_log_v19.csv"
     file_mode = 'a' if (resume_path_black and resume_path_white) and os.path.exists(log_filename) else 'w'
     with open(log_filename, mode=file_mode, newline='') as log_file:
         log_writer = csv.writer(log_file)
@@ -504,18 +508,21 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         
         # 0 : Black Agent Training Phase (White : Frozen)
         # 1 : White Agent Training Phase (Black : Frozen)
-        training_phase = (episode // cross_frequency) % 2
-        black_training_phase = (training_phase == 0)
-        white_training_phase = (training_phase == 1)
-        if(episode < simultaneous_learning_episodes) :
-            black_training_phase = True
-            white_training_phase = True
+        
+        # v19 change: always train both agents (Test)
+        # training_phase = (episode // cross_frequency) % 2
+        # black_training_phase = (training_phase == 0)
+        # white_training_phase = (training_phase == 1)
+        black_training_phase = True
+        white_training_phase = True
+        # if(episode < simultaneous_learning_episodes) :
+        #     black_training_phase = True
+        #     white_training_phase = True
         
         while not done :
             step_count += 1
-            # if(step_count >= 1000) :
-            #     time_over = True
-            #     break
+            if(step_count >= 100000) :  # I hope this won't happen...
+                break
                 
             turn = observation["turn"]
             # aiming_reward = 0.0
@@ -564,7 +571,7 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             # distance_before = nearest_distance(observation, turn, action["index"])
             next_observation, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-            # is_there_black_collision, is_there_white_collision = collision_detected(observation, next_observation)
+            is_there_black_collision, is_there_white_collision = collision_detected(observation, next_observation)
             observation = next_observation
             # distance_after = nearest_distance(observation, turn, action["index"])
             
@@ -579,16 +586,16 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             #     else : white_records["rewards"][-1] += distance_reward
                 
             # Reward by Collision (Knockback)            
-            # if(turn == 0 and is_there_white_collision) :
-            #     black_hit_count += 1
-            #     black_records["rewards"][-1] += 10.0  # collision constant reward
+            if(turn == 0 and is_there_white_collision) :
+                black_hit_count += 1
+                black_records["rewards"][-1] += 0.005  # collision constant reward
             #     if(distance_before < distance_after) :  # opponent stone knocked back
             #         delta_distance = distance_after - distance_before
             #         knockback_reward = knockback_scale * np.tanh(delta_distance / 50.0)
             #         black_records["rewards"][-1] += knockback_reward * 5.0
-            # elif(turn == 1 and is_there_black_collision) :
-            #     white_hit_count += 1
-            #     white_records["rewards"][-1] += 10.0  # collision constant reward
+            elif(turn == 1 and is_there_black_collision) :
+                white_hit_count += 1
+                white_records["rewards"][-1] += 0.005  # collision constant reward
             #     if(distance_before < distance_after) :  # opponent stone knocked back
             #         delta_distance = distance_after - distance_before
             #         knockback_reward = knockback_scale * np.tanh(delta_distance / 50.0)
@@ -604,12 +611,12 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             if(turn == 0) :
             #     black_records["rewards"][-1] -= capture_reward_black * 8.0  # self dying penalty
                 black_self_dying_count += capture_reward_black
-            #     black_records["rewards"][-1] += capture_reward_white * 30.0  # opponent capture reward
+                black_records["rewards"][-1] += capture_reward_white * 0.1  # opponent capture reward
                 black_kill_count += capture_reward_white
             else :
             #     white_records["rewards"][-1] -= capture_reward_white * 8.0  # self dying penalty
                 white_self_dying_count += capture_reward_white
-            #     white_records["rewards"][-1] += capture_reward_black * 30.0  # opponent capture reward
+                white_records["rewards"][-1] += capture_reward_black * 0.1  # opponent capture reward
                 white_kill_count += capture_reward_black
                 
             # Reward by Survival
@@ -678,11 +685,11 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         print(f"Episode {episode + 1}/{start_episode + episodes} completed | Winner: {winner:5s}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d} | Phase: {phase:15s}", end="\r")
         
         if((episode + 1) % 10000 == 0) :  # temporary save
-            black_agent.save(f"./moka_black_v18_{episode + 1}")
-            white_agent.save(f"./moka_white_v18_{episode + 1}")
+            black_agent.save(f"./moka_black_v19_{episode + 1}")
+            white_agent.save(f"./moka_white_v19_{episode + 1}")
     
-    black_agent.save("./moka_black_v18")
-    white_agent.save("./moka_white_v18")
+    black_agent.save("./moka_black_v19")
+    white_agent.save("./moka_white_v19")
     env.close()
 
 def test() :
@@ -692,8 +699,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v18_80000")
-    white_agent = WhiteAgent.load("./moka_white_v18_80000")
+    black_agent = BlackAgent.load("./moka_black_v19")
+    white_agent = WhiteAgent.load("./moka_white_v19")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -711,5 +718,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    # train()
+    train()
     test()
