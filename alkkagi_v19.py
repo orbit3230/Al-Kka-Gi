@@ -61,7 +61,7 @@ import os
 # 3. Lower Learning Rate
 # ---
 # v19 Patch Notes
-# 1. No Cross-Training. Always train both agents. (Test)
+# 1. (CANCELLED) No Cross-Training. Always train both agents. (Test)
 # 2. Added Small Reward for Collision & Kill
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
@@ -509,15 +509,15 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         # 0 : Black Agent Training Phase (White : Frozen)
         # 1 : White Agent Training Phase (Black : Frozen)
         
-        # v19 change: always train both agents (Test)
-        # training_phase = (episode // cross_frequency) % 2
-        # black_training_phase = (training_phase == 0)
-        # white_training_phase = (training_phase == 1)
-        black_training_phase = True
-        white_training_phase = True
-        # if(episode < simultaneous_learning_episodes) :
-        #     black_training_phase = True
-        #     white_training_phase = True
+        # (CANCELED) v19 change: always train both agents (Test)
+        training_phase = (episode // cross_frequency) % 2
+        black_training_phase = (training_phase == 0)
+        white_training_phase = (training_phase == 1)
+        # black_training_phase = True
+        # white_training_phase = True
+        if(episode < simultaneous_learning_episodes) :
+            black_training_phase = True
+            white_training_phase = True
         
         while not done :
             step_count += 1
@@ -611,12 +611,12 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             if(turn == 0) :
             #     black_records["rewards"][-1] -= capture_reward_black * 8.0  # self dying penalty
                 black_self_dying_count += capture_reward_black
-                black_records["rewards"][-1] += capture_reward_white * 0.1  # opponent capture reward
+                black_records["rewards"][-1] += capture_reward_white * 0.5  # opponent capture reward
                 black_kill_count += capture_reward_white
             else :
             #     white_records["rewards"][-1] -= capture_reward_white * 8.0  # self dying penalty
                 white_self_dying_count += capture_reward_white
-                white_records["rewards"][-1] += capture_reward_black * 0.1  # opponent capture reward
+                white_records["rewards"][-1] += capture_reward_black * 0.5  # opponent capture reward
                 white_kill_count += capture_reward_black
                 
             # Reward by Survival
