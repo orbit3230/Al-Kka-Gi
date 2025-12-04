@@ -127,6 +127,21 @@ def observation_to_input(observation, turn) :
     
     return np.concatenate([player_stones, opponent_stones, obstacles, turn_indicator]), valid_mask  # (31, ), (3, )
 
+class ClipLayer(keras.layers.Layer) :
+    def __init__(self, min_value, max_value, **kwargs) :
+        super(ClipLayer, self).__init__(**kwargs)
+        self.min_value = min_value
+        self.max_value = max_value
+    def call(self, inputs) :
+        return tf.clip_by_value(inputs+0.001, self.min_value, self.max_value)
+    def get_config(self) :
+        config = super(ClipLayer, self).get_config()
+        config.update({
+            "min_value" : self.min_value,
+            "max_value" : self.max_value
+        })
+        return config
+
 def build_actor_critic_model(input_shape) :
     inputs = keras.layers.Input(shape=input_shape, name="state_input")
     mask_input = keras.layers.Input(shape=(3,), name="mask_input")
@@ -149,14 +164,16 @@ def build_actor_critic_model(input_shape) :
     # power_mean = keras.layers.Lambda(lambda x : x * 2500.0 + 1.0)(power_mean)  # (1.0 ~ 2501.0) -> clipped later
     power_std_dev_raw = keras.layers.Dense(3, activation="softplus", name="power_std_dev")(actor_common)  # must be positive
     # power_std_dev = keras.layers.Lambda(lambda x : x + 0.001)(power_std_dev)  # avoid zero stddev
-    power_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.2), output_shape=(3,))(power_std_dev_raw)  # upper bound
+    # power_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.2), output_shape=(3,))(power_std_dev_raw)  # upper bound
+    power_std_dev = ClipLayer(0.001, 0.2, name="power_std_dev_clip")(power_std_dev_raw)
     
     # 3. Angle
     angle_mean = keras.layers.Dense(3, activation="tanh", name="angle_mean")(actor_common)  # (-1.0 ~ 1.0)
     # angle_mean = keras.layers.Lambda(lambda x : x * 180.0)(angle_mean)  # (-180.0 ~ 180.0)
     angle_std_dev_raw = keras.layers.Dense(3, activation="softplus", name="angle_std_dev")(actor_common)  # must be positive
     # angle_std_dev = keras.layers.Lambda(lambda x : x + 0.001)(angle_std_dev)  # avoid zero stddev
-    angle_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.05), output_shape=(3,))(angle_std_dev_raw)  # upper bound
+    # angle_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.05), output_shape=(3,))(angle_std_dev_raw)  # upper bound
+    angle_std_dev = ClipLayer(0.001, 0.05, name="angle_std_dev_clip")(angle_std_dev_raw)
     
     actor_model = keras.Model(
         inputs = [inputs, mask_input],
@@ -352,7 +369,8 @@ class Agent(kym.Agent) :
 
     @classmethod
     def load(cls, path: str) -> "kym.Agent" :
-        actor = keras.models.load_model(path + "_actor.keras", safe_mode=False)
+        custom_objects = {"ClipLayer": ClipLayer}
+        actor = keras.models.load_model(path + "_actor.keras", custom_objects=custom_objects,safe_mode=False)
         critic = keras.models.load_model(path + "_critic.keras", safe_mode=False)
         model = (actor, critic)
         return cls(model=model)
@@ -714,8 +732,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v20")
-    white_agent = WhiteAgent.load("./moka_white_v20")
+    black_agent = BlackAgent.load("./moka_black_v20_60000")
+    white_agent = WhiteAgent.load("./moka_white_v20_60000")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -733,5 +751,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    train()
+    # train()
     test()
