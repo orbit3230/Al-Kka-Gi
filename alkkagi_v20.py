@@ -385,13 +385,13 @@ class Agent(kym.Agent) :
         selection_logits, power_mean, power_std_dev, angle_mean, angle_std_dev = self.actor([state_tensor, mask_tensor])
         
         # debug
-        # print("turn : ", 'black' if turn == 0 else 'white')
-        # print("selection_logits : ", selection_logits.numpy()[0])
-        # print("power_mean : ", power_mean.numpy()[0])
-        # print("power_std_dev : ", power_std_dev.numpy()[0])
-        # print("angle_mean : ", angle_mean.numpy()[0])
-        # print("angle_std_dev : ", angle_std_dev.numpy()[0])
-        # print("---------------------------")
+        print("turn : ", 'black' if turn == 0 else 'white')
+        print("selection_logits : ", selection_logits.numpy()[0])
+        print("power_mean : ", power_mean.numpy()[0])
+        print("power_std_dev : ", power_std_dev.numpy()[0])
+        print("angle_mean : ", angle_mean.numpy()[0])
+        print("angle_std_dev : ", angle_std_dev.numpy()[0])
+        print("---------------------------")
         
         # Stone Selection
         if(deterministic) : selected_index = np.argmax(selection_logits.numpy()[0])
@@ -732,8 +732,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v20_60000")
-    white_agent = WhiteAgent.load("./moka_white_v20_60000")
+    black_agent = BlackAgent.load("./moka_black_v20_240000")
+    white_agent = WhiteAgent.load("./moka_white_v20_240000")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
