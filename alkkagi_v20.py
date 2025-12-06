@@ -732,8 +732,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v20_250000")
-    white_agent = WhiteAgent.load("./moka_white_v20_250000")
+    black_agent = BlackAgent.load("./moka_black_v20_500000")
+    white_agent = WhiteAgent.load("./moka_white_v20_500000")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
