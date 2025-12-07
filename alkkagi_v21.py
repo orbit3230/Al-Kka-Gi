@@ -70,6 +70,10 @@ import os
 # 3. Added Advantage Clipping
 # 4. Added Advantage Normalization
 # 5. Added Entropy Clipping
+# ---
+# v21 Patch Notes
+# 1. Reduced Clipping Ranges
+# 2. More Bonus for Collision & Kill
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
     WIDTH = 600
@@ -165,7 +169,7 @@ def build_actor_critic_model(input_shape) :
     power_std_dev_raw = keras.layers.Dense(3, activation="softplus", name="power_std_dev")(actor_common)  # must be positive
     # power_std_dev = keras.layers.Lambda(lambda x : x + 0.001)(power_std_dev)  # avoid zero stddev
     # power_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.2), output_shape=(3,))(power_std_dev_raw)  # upper bound
-    power_std_dev = ClipLayer(0.001, 0.2, name="power_std_dev_clip")(power_std_dev_raw)
+    power_std_dev = ClipLayer(0.001, 0.1, name="power_std_dev_clip")(power_std_dev_raw)
     
     # 3. Angle
     angle_mean = keras.layers.Dense(3, activation="tanh", name="angle_mean")(actor_common)  # (-1.0 ~ 1.0)
@@ -173,7 +177,7 @@ def build_actor_critic_model(input_shape) :
     angle_std_dev_raw = keras.layers.Dense(3, activation="softplus", name="angle_std_dev")(actor_common)  # must be positive
     # angle_std_dev = keras.layers.Lambda(lambda x : x + 0.001)(angle_std_dev)  # avoid zero stddev
     # angle_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.05), output_shape=(3,))(angle_std_dev_raw)  # upper bound
-    angle_std_dev = ClipLayer(0.001, 0.05, name="angle_std_dev_clip")(angle_std_dev_raw)
+    angle_std_dev = ClipLayer(0.001, 0.03, name="angle_std_dev_clip")(angle_std_dev_raw)
     
     actor_model = keras.Model(
         inputs = [inputs, mask_input],
@@ -489,7 +493,7 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
     episodes = 500000
     
     # Open CSV file for logging
-    log_filename = "training_log_v20.csv"
+    log_filename = "training_log_v21.csv"
     file_mode = 'a' if (resume_path_black and resume_path_white) and os.path.exists(log_filename) else 'w'
     with open(log_filename, mode=file_mode, newline='') as log_file:
         log_writer = csv.writer(log_file)
@@ -621,14 +625,14 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             # Reward by Collision (Knockback)            
             if(turn == 0 and is_there_white_collision) :
                 black_hit_count += 1
-                black_records["rewards"][-1] += 0.1  # collision constant reward
+                black_records["rewards"][-1] += 0.5  # collision constant reward
             #     if(distance_before < distance_after) :  # opponent stone knocked back
             #         delta_distance = distance_after - distance_before
             #         knockback_reward = knockback_scale * np.tanh(delta_distance / 50.0)
             #         black_records["rewards"][-1] += knockback_reward * 5.0
             elif(turn == 1 and is_there_black_collision) :
                 white_hit_count += 1
-                white_records["rewards"][-1] += 0.1  # collision constant reward
+                white_records["rewards"][-1] += 0.5  # collision constant reward
             #     if(distance_before < distance_after) :  # opponent stone knocked back
             #         delta_distance = distance_after - distance_before
             #         knockback_reward = knockback_scale * np.tanh(delta_distance / 50.0)
@@ -644,12 +648,12 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             if(turn == 0) :
             #     black_records["rewards"][-1] -= capture_reward_black * 8.0  # self dying penalty
                 black_self_dying_count += capture_reward_black
-                black_records["rewards"][-1] += capture_reward_white * 0.5  # opponent capture reward
+                black_records["rewards"][-1] += capture_reward_white * 1.0  # opponent capture reward
                 black_kill_count += capture_reward_white
             else :
             #     white_records["rewards"][-1] -= capture_reward_white * 8.0  # self dying penalty
                 white_self_dying_count += capture_reward_white
-                white_records["rewards"][-1] += capture_reward_black * 0.5  # opponent capture reward
+                white_records["rewards"][-1] += capture_reward_black * 1.0  # opponent capture reward
                 white_kill_count += capture_reward_black
                 
             # Reward by Survival
@@ -718,11 +722,11 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         print(f"Episode {episode + 1}/{start_episode + episodes} completed | Winner: {winner:5s}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d} | Phase: {phase:15s}", end="\r")
         
         if((episode + 1) % 10000 == 0) :  # temporary save
-            black_agent.save(f"./moka_black_v20_{episode + 1}")
-            white_agent.save(f"./moka_white_v20_{episode + 1}")
+            black_agent.save(f"./moka_black_v21_{episode + 1}")
+            white_agent.save(f"./moka_white_v21_{episode + 1}")
     
-    black_agent.save("./moka_black_v20")
-    white_agent.save("./moka_white_v20")
+    black_agent.save("./moka_black_v21")
+    white_agent.save("./moka_white_v21")
     env.close()
 
 def test() :
@@ -732,8 +736,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v20_500000")
-    white_agent = WhiteAgent.load("./moka_white_v20_500000")
+    black_agent = BlackAgent.load("./moka_black_v21")
+    white_agent = WhiteAgent.load("./moka_white_v21")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
