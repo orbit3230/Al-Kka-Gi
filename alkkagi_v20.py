@@ -385,13 +385,13 @@ class Agent(kym.Agent) :
         selection_logits, power_mean, power_std_dev, angle_mean, angle_std_dev = self.actor([state_tensor, mask_tensor])
         
         # debug
-        print("turn : ", 'black' if turn == 0 else 'white')
-        print("selection_logits : ", selection_logits.numpy()[0])
-        print("power_mean : ", power_mean.numpy()[0])
-        print("power_std_dev : ", power_std_dev.numpy()[0])
-        print("angle_mean : ", angle_mean.numpy()[0])
-        print("angle_std_dev : ", angle_std_dev.numpy()[0])
-        print("---------------------------")
+        # print("turn : ", 'black' if turn == 0 else 'white')
+        # print("selection_logits : ", selection_logits.numpy()[0])
+        # print("power_mean : ", power_mean.numpy()[0])
+        # print("power_std_dev : ", power_std_dev.numpy()[0])
+        # print("angle_mean : ", angle_mean.numpy()[0])
+        # print("angle_std_dev : ", angle_std_dev.numpy()[0])
+        # print("---------------------------")
         
         # Stone Selection
         if(deterministic) : selected_index = np.argmax(selection_logits.numpy()[0])
@@ -462,10 +462,11 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
     )
     if(resume_path_black and resume_path_white) :
         print(f"Resuming training from {resume_path_black} and {resume_path_white} ...")
-        black_actor_model = keras.models.load_model(resume_path_black + "_actor.keras", safe_mode=False)
-        black_critic_model = keras.models.load_model(resume_path_black + "_critic.keras", safe_mode=False)
-        white_actor_model = keras.models.load_model(resume_path_white + "_actor.keras", safe_mode=False)
-        white_critic_model = keras.models.load_model(resume_path_white + "_critic.keras", safe_mode=False)
+        custom_objects = {"ClipLayer": ClipLayer}
+        black_actor_model = keras.models.load_model(resume_path_black + "_actor.keras", custom_objects=custom_objects, safe_mode=False)
+        black_critic_model = keras.models.load_model(resume_path_black + "_critic.keras", custom_objects=custom_objects, safe_mode=False)
+        white_actor_model = keras.models.load_model(resume_path_white + "_actor.keras", custom_objects=custom_objects, safe_mode=False)
+        white_critic_model = keras.models.load_model(resume_path_white + "_critic.keras", custom_objects=custom_objects, safe_mode=False)
     else :
         print("Starting training from scratch ...")
         black_actor_model, black_critic_model = build_actor_critic_model((31, ))
@@ -732,8 +733,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v20_500000")
-    white_agent = WhiteAgent.load("./moka_white_v20_500000")
+    black_agent = BlackAgent.load("./moka_black_v20")
+    white_agent = WhiteAgent.load("./moka_white_v20")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -751,5 +752,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    # train()
+    train("./moka_black_v20_500000", "./moka_white_v20_500000", start_episode=500000)
     test()
