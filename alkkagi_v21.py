@@ -389,13 +389,13 @@ class Agent(kym.Agent) :
         selection_logits, power_mean, power_std_dev, angle_mean, angle_std_dev = self.actor([state_tensor, mask_tensor])
         
         # debug
-        print("turn : ", 'black' if turn == 0 else 'white')
-        print("selection_logits : ", selection_logits.numpy()[0])
-        print("power_mean : ", power_mean.numpy()[0])
-        print("power_std_dev : ", power_std_dev.numpy()[0])
-        print("angle_mean : ", angle_mean.numpy()[0])
-        print("angle_std_dev : ", angle_std_dev.numpy()[0])
-        print("---------------------------")
+        # print("turn : ", 'black' if turn == 0 else 'white')
+        # print("selection_logits : ", selection_logits.numpy()[0])
+        # print("power_mean : ", power_mean.numpy()[0])
+        # print("power_std_dev : ", power_std_dev.numpy()[0])
+        # print("angle_mean : ", angle_mean.numpy()[0])
+        # print("angle_std_dev : ", angle_std_dev.numpy()[0])
+        # print("---------------------------")
         
         # Stone Selection
         if(deterministic) : selected_index = np.argmax(selection_logits.numpy()[0])
@@ -755,5 +755,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    # train()
+    train()
     test()
