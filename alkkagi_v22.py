@@ -174,8 +174,8 @@ def build_actor_critic_model(input_shape) :
     # power_std_dev = keras.layers.Lambda(lambda x : x + 0.001)(power_std_dev)  # avoid zero stddev
     # power_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.2), output_shape=(3,))(power_std_dev_raw)  # upper bound
     # power_std_dev = ClipLayer(0.001, 0.2, name="power_std_dev_clip")(power_std_dev_raw)
-    power_std_dev_raw = keras.layers.Dense(3)(actor_common)
-    power_std_dev = 0.01 + 0.09 * tf.nn.sigmoid(power_std_dev_raw)
+    power_std_dev_base = keras.layers.Dense(3, activation="sigmoid", name="power_std_dev_base")(actor_common)
+    power_std_dev = 0.01 + 0.09 * power_std_dev_base
     
     # 3. Angle
     angle_mean = keras.layers.Dense(3, activation="tanh", name="angle_mean")(actor_common)  # (-1.0 ~ 1.0)
@@ -184,8 +184,8 @@ def build_actor_critic_model(input_shape) :
     # angle_std_dev = keras.layers.Lambda(lambda x : x + 0.001)(angle_std_dev)  # avoid zero stddev
     # angle_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.05), output_shape=(3,))(angle_std_dev_raw)  # upper bound
     # angle_std_dev = ClipLayer(0.001, 0.05, name="angle_std_dev_clip")(angle_std_dev_raw)
-    angle_std_dev_raw = keras.layers.Dense(3)(actor_common)
-    angle_std_dev = 0.01 + 0.02 * tf.nn.sigmoid(angle_std_dev_raw)
+    angle_std_dev_base = keras.layers.Dense(3, activation="sigmoid", name="angle_std_dev_base")(actor_common)
+    angle_std_dev = 0.01 + 0.02 * angle_std_dev_base
     
     actor_model = keras.Model(
         inputs = [inputs, mask_input],
@@ -765,5 +765,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    train("./moka_black_v20_500000", "./moka_white_v20_500000", start_episode=500000)
+    train()
     test()
