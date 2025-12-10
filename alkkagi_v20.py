@@ -356,8 +356,9 @@ def collision_detected(observation_before, observation_after) :
 class Agent(kym.Agent) :
     def __init__(self, model = None, path: str = None) :
         if(path) :
-            self.actor = keras.models.load_model(path + "_actor.keras", safe_mode=False)
-            self.critic = keras.models.load_model(path + "_critic.keras", safe_mode=False)
+            custom_objects = {"ClipLayer": ClipLayer}
+            self.actor = keras.models.load_model(path + "_actor.keras", custom_objects=custom_objects, safe_mode=False)
+            self.critic = keras.models.load_model(path + "_critic.keras", custom_objects=custom_objects, safe_mode=False)
         elif(model) :
             self.actor, self.critic = model
         else :
@@ -733,8 +734,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v20")
-    white_agent = WhiteAgent.load("./moka_white_v20")
+    black_agent = BlackAgent.load("./moka_black_v20_550000")
+    white_agent = WhiteAgent.load("./moka_white_v20_550000")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
