@@ -78,6 +78,11 @@ import os
 # 2. Enabled self-dying penalty
 # 3. Ease the Return/Advantage clipping
 # 4. Simultaneous self-play (TEST)
+# ---
+# v23 Patch Notes
+# 1. stddev minimum increased
+# 2. Restored Aiming Reward
+# 3. Big Change in observation_to_input() function
 # ---------- Helper Functions ----------
 def observation_to_input(observation, turn) :
     WIDTH = 600
@@ -175,7 +180,7 @@ def build_actor_critic_model(input_shape) :
     # power_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.2), output_shape=(3,))(power_std_dev_raw)  # upper bound
     # power_std_dev = ClipLayer(0.001, 0.2, name="power_std_dev_clip")(power_std_dev_raw)
     power_std_dev_base = keras.layers.Dense(3, activation="sigmoid", name="power_std_dev_base")(actor_common)
-    power_std_dev = 0.01 + 0.09 * power_std_dev_base
+    power_std_dev = 0.02 + 0.08 * power_std_dev_base
     
     # 3. Angle
     angle_mean = keras.layers.Dense(3, activation="tanh", name="angle_mean")(actor_common)  # (-1.0 ~ 1.0)
@@ -185,7 +190,7 @@ def build_actor_critic_model(input_shape) :
     # angle_std_dev = keras.layers.Lambda(lambda x : tf.clip_by_value(x+0.001, 0.001, 0.05), output_shape=(3,))(angle_std_dev_raw)  # upper bound
     # angle_std_dev = ClipLayer(0.001, 0.05, name="angle_std_dev_clip")(angle_std_dev_raw)
     angle_std_dev_base = keras.layers.Dense(3, activation="sigmoid", name="angle_std_dev_base")(actor_common)
-    angle_std_dev = 0.01 + 0.02 * angle_std_dev_base
+    angle_std_dev = 0.02 + 0.02 * angle_std_dev_base
     
     actor_model = keras.Model(
         inputs = [inputs, mask_input],
@@ -304,30 +309,30 @@ def train_by_records(agent, states, masks, actions, returns, actor_optimizer, cr
     
     return total_actor_loss, critic_loss, entropy
 
-# def get_aiming_reward(observation, turn, selection, angle) :
-#     if(turn == 0) :
-#         players = observation["black"]
-#         opponents = observation["white"]
-#     else :
-#         players = observation["white"]
-#         opponents = observation["black"]
+def get_aiming_reward(observation, turn, selection, angle) :
+    if(turn == 0) :
+        players = observation["black"]
+        opponents = observation["white"]
+    else :
+        players = observation["white"]
+        opponents = observation["black"]
         
-#     player_stone = players[selection]
-#     if(player_stone[2] == 0) : return -1.0
+    player_stone = players[selection]
+    if(player_stone[2] == 0) : return 0.0
     
-#     alive_opponents = [stone for stone in opponents if stone[2] == 1]
-#     if(not alive_opponents) : return 0.0  # this code should not be reached normally
+    alive_opponents = [stone for stone in opponents if stone[2] == 1]
+    if(not alive_opponents) : return 0.0  # this code should not be reached normally
     
-#     max_cosine_similarity = -1.0  # if aiming directly, cosine similarity is 1.0
-#     for opponent in alive_opponents :
-#         dx = opponent[0] - player_stone[0]
-#         dy = opponent[1] - player_stone[1]
-#         target_angle_degree = np.degrees(np.arctan2(dy, dx))
-#         cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
-#         max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
+    max_cosine_similarity = -1.0  # if aiming directly, cosine similarity is 1.0
+    for opponent in alive_opponents :
+        dx = opponent[0] - player_stone[0]
+        dy = opponent[1] - player_stone[1]
+        target_angle_degree = np.degrees(np.arctan2(dy, dx))
+        cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
+        max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
         
-#     # [0.0, 2.0]
-#     return (max_cosine_similarity + 1.0)
+    # -0.2 ~ +0.2
+    return 0.2 * max_cosine_similarity
 
 # return : {is_there_black_collision, is_there_white_collision}
 def collision_detected(observation_before, observation_after) :
@@ -398,13 +403,13 @@ class Agent(kym.Agent) :
         selection_logits, power_mean, power_std_dev, angle_mean, angle_std_dev = self.actor([state_tensor, mask_tensor])
         
         # debug
-        print("turn : ", 'black' if turn == 0 else 'white')
-        print("selection_logits : ", selection_logits.numpy()[0])
-        print("power_mean : ", power_mean.numpy()[0])
-        print("power_std_dev : ", power_std_dev.numpy()[0])
-        print("angle_mean : ", angle_mean.numpy()[0])
-        print("angle_std_dev : ", angle_std_dev.numpy()[0])
-        print("---------------------------")
+        # print("turn : ", 'black' if turn == 0 else 'white')
+        # print("selection_logits : ", selection_logits.numpy()[0])
+        # print("power_mean : ", power_mean.numpy()[0])
+        # print("power_std_dev : ", power_std_dev.numpy()[0])
+        # print("angle_mean : ", angle_mean.numpy()[0])
+        # print("angle_std_dev : ", angle_std_dev.numpy()[0])
+        # print("---------------------------")
         
         # Stone Selection
         if(deterministic) : selected_index = np.argmax(selection_logits.numpy()[0])
@@ -503,7 +508,7 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
     episodes = 500000
     
     # Open CSV file for logging
-    log_filename = "training_log_v22.csv"
+    log_filename = "training_log_v23.csv"
     file_mode = 'a' if (resume_path_black and resume_path_white) and os.path.exists(log_filename) else 'w'
     with open(log_filename, mode=file_mode, newline='') as log_file:
         log_writer = csv.writer(log_file)
@@ -516,7 +521,8 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
                 "Entropy_Black", "Entropy_White",
                 "Black_Self_Dying_Count", "White_Self_Dying_Count",
                 "Black_Kill_Count", "White_Kill_Count",
-                "Black_Hit_Count", "White_Hit_Count"
+                "Black_Hit_Count", "White_Hit_Count",
+                "White_Correct_Aim_Count", "Black_Correct_Aim_Count"
             ])
     
     # Training Loop
@@ -545,6 +551,8 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         white_kill_count = 0
         black_hit_count = 0
         white_hit_count = 0
+        black_correct_aim_count = 0
+        white_correct_aim_count = 0
         GAMMA = 0.99
         # Made Draw's current value same regardless of episode length
         step_penalty = 0.005
@@ -611,9 +619,13 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             else : white_records["rewards"][-1] -= step_penalty
             
             # Reward by Aiming
-            # aiming_reward = get_aiming_reward(observation, turn, action["index"], action["angle"])
-            # if(turn == 0) : black_records["rewards"][-1] += aiming_reward
-            # else : white_records["rewards"][-1] += aiming_reward
+            aiming_reward = get_aiming_reward(observation, turn, action["index"], action["angle"])
+            if(turn == 0) :
+                if(aiming_reward > 0.18) : black_correct_aim_count += 1
+                black_records["rewards"][-1] += aiming_reward
+            else :
+                if(aiming_reward > 0.18) : white_correct_aim_count += 1
+                white_records["rewards"][-1] += aiming_reward
             
             # distance_before = nearest_distance(observation, turn, action["index"])
             next_observation, reward, terminated, truncated, info = env.step(action)
@@ -725,18 +737,19 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
                 entropy_white.numpy() if isinstance(entropy_white, tf.Tensor) else entropy_white,
                 black_self_dying_count, white_self_dying_count,
                 black_kill_count, white_kill_count,
-                black_hit_count, white_hit_count
+                black_hit_count, white_hit_count,
+                black_correct_aim_count, white_correct_aim_count
             ])
         
         phase = "Black Training" if black_training_phase else "White Training" if white_training_phase else "No Training"
         print(f"Episode {episode + 1}/{start_episode + episodes} completed | Winner: {winner:5s}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d} | Phase: {phase:15s}", end="\r")
         
         if((episode + 1) % 10000 == 0) :  # temporary save
-            black_agent.save(f"./moka_black_v22_{episode + 1}")
-            white_agent.save(f"./moka_white_v22_{episode + 1}")
+            black_agent.save(f"./moka_black_v23_{episode + 1}")
+            white_agent.save(f"./moka_white_v23_{episode + 1}")
     
-    black_agent.save("./moka_black_v22")
-    white_agent.save("./moka_white_v22")
+    black_agent.save("./moka_black_v23")
+    white_agent.save("./moka_white_v23")
     env.close()
 
 def test() :
@@ -746,8 +759,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v22_160000")
-    white_agent = WhiteAgent.load("./moka_white_v22_160000")
+    black_agent = BlackAgent.load("./moka_black_v23")
+    white_agent = WhiteAgent.load("./moka_white_v23")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -765,5 +778,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    # train()
+    train()
     test()
