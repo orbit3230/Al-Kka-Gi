@@ -163,7 +163,6 @@ def observation_to_input(observation, turn) :
     valid_mask = player_stones[:, 2].astype(np.float32)  # (3, ) e.g., [1., 0., 1.] -> alive, dead, alive
     return np.concatenate([features, turn_indicator]), valid_mask  # (28, ), (3, )
     
-    
 # def observation_to_input(observation, turn) :
 #     WIDTH = 600
 #     HEIGHT = 600
@@ -843,8 +842,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v24")
-    white_agent = WhiteAgent.load("./moka_white_v24")
+    black_agent = BlackAgent.load("./moka_black_v24_10000")
+    white_agent = WhiteAgent.load("./moka_white_v24_10000")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -862,5 +861,5 @@ def test() :
     
 if __name__ == "__main__" :
     # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
-    train()
+    # train()
     test()
