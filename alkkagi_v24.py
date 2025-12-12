@@ -82,10 +82,45 @@ import os
 # v23 Patch Notes
 # 1. stddev minimum increased
 # 2. Restored Aiming Reward
+# ---
+# v24 Patch Notes
+# 1. Lower Aiming Reward
+# 2. Big update in observation_to_input() function
 # ---------- Helper Functions ----------
+def point_in_obstacle(x, y, rx1, ry1, rx2, ry2) :
+    return((min(rx1, rx2) <= x <= max(rx1, rx2)) and (min(ry1, ry2) <= y <= max(ry1, ry2)))
+
+def ccw(ax, ay, bx, by, cx, cy) :
+    return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax)
+
+def segments_intersect(ax, ay, bx, by, cx, cy, dx, dy) :
+    return (ccw(ax, ay, cx, cy, dx, dy) != ccw(bx, by, cx, cy, dx, dy)) and \
+              (ccw(ax, ay, bx, by, cx, cy) != ccw(ax, ay, bx, by, dx, dy)) 
+              
+def segment_blocked_by_obstacle(x1, y1, x2, y2, obstacles) :
+    if(obstacles.size == 0) : return False
+    for(ox1, oy1, ox2, oy2) in obstacles :
+        xmin = min(ox1, ox2)
+        xmax = max(ox1, ox2)
+        ymin = min(oy1, oy2)
+        ymax = max(oy1, oy2)
+        if(point_in_obstacle(x1, y1, ox1, oy1, ox2, oy2) or point_in_obstacle(x2, y2, ox1, oy1, ox2, oy2)) :
+            return True
+        edges = [
+            (xmin, ymin, xmax, ymin),
+            (xmax, ymin, xmax, ymax),
+            (xmax, ymax, xmin, ymax),
+            (xmin, ymax, xmin, ymin)
+        ]
+        for(ex1, ey1, ex2, ey2) in edges :
+            if(segments_intersect(x1, y1, x2, y2, ex1, ey1, ex2, ey2)) :
+                return True
+    return False
+
 def observation_to_input(observation, turn) :
     WIDTH = 600
     HEIGHT = 600
+    DIAGONAL = (WIDTH ** 2 + HEIGHT ** 2) ** 0.5
     
     if(turn == 0) :
         player = "black"
@@ -93,51 +128,97 @@ def observation_to_input(observation, turn) :
     else :
         player = "white"
         opponent = "black"
-    
+        
     player_stones = np.array(observation[player], dtype=np.float32)
-    player_stones = player_stones.flatten()  # (9, )
-    
-    # Sort opponent stones by y-coordinate
     opponent_stones = np.array(observation[opponent], dtype=np.float32)
-    opponent_stones = sorted(opponent_stones, key=lambda x: (-x[2], x[1])) # alive first, then by y-coordinate
-    opponent_stones = np.array(opponent_stones, dtype=np.float32).flatten()  # (9, )
+    obstacles = np.array(observation["obstacles"], dtype=np.float32)
+    # Reshape obstacle information into [x1, y1, x2, y2]
+    if(obstacles.size == 0) : obstacles = obstacles.reshape(0, 4)
+    else : obstacles = obstacles.reshape(-1, 4)
     
-    obstacles = np.array(observation["obstacles"], dtype=np.float32).flatten()  # (12, )
+    features = []
     
-    # Normalize
-    player_stones[0::3] /= WIDTH
-    player_stones[1::3] /= HEIGHT
-    opponent_stones[0::3] /= WIDTH
-    opponent_stones[1::3] /= HEIGHT
-    obstacles[0::4] /= WIDTH
-    obstacles[1::4] /= HEIGHT
-    obstacles[2::4] /= WIDTH
-    obstacles[3::4] /= HEIGHT
+    for i in range(3) :
+        x, y, alive = player_stones[i]
+        for j in range(3) :
+            ox, oy, oalive = opponent_stones[j]
+            if(alive == 0 or oalive == 0) :
+                angle_norm = 0.0
+                distance_norm = 1.0
+                blocked = 0.0
+                features.extend([angle_norm, distance_norm, blocked])
+                continue
+            dx = float(ox - x)
+            dy = float(oy - y)
+            angle = np.arctan2(dy, dx)  # -pi ~ +pi
+            angle_norm = angle / np.pi  # -1.0 ~ +1.0
+            distance = float(np.sqrt(dx * dx + dy * dy))
+            distance_norm = float(distance / DIAGONAL)  # 0.0 ~ ~1.0
+            blocked = 1.0 if segment_blocked_by_obstacle(x, y, ox, oy, obstacles) else 0.0
+            features.extend([angle_norm, distance_norm, blocked])
     
-    # if(turn == 1) :
-    #     for i in range(len(player_stones) // 3) :
-    #         if(player_stones[i*3+2] == 1) :  # alive stone
-    #             player_stones[i*3+0] = 1.0 - player_stones[i*3+0]  # x
-    #     for i in range(len(opponent_stones) // 3) :
-    #         if(opponent_stones[i*3+2] == 1) :  # alive stone
-    #             opponent_stones[i*3+0] = 1.0 - opponent_stones[i*3+0]  # x
-    
-    # Dead stone processing after normalization
-    for i in range(len(player_stones) // 3) :
-        if(player_stones[i*3+2] == 0) :  # dead stone
-            player_stones[i*3+0] = -1.0  # x
-            player_stones[i*3+1] = -1.0  # y
-    for i in range(len(opponent_stones) // 3) :
-        if(opponent_stones[i*3+2] == 0) :  # dead stone
-            opponent_stones[i*3+0] = -1.0  # x
-            opponent_stones[i*3+1] = -1.0  # y
-    
-    # Dead stone masking
-    valid_mask = player_stones[2::3]  # (3, ) e.g., [1., 0., 1.] -> alive, dead, alive
-    
+    # 3 x 3 x 3 = 27 features from stone interactions
+    features = np.array(features, dtype=np.float32)  # (27, )
     turn_indicator = np.array([float(turn)], dtype=np.float32)  # (1, )
+    valid_mask = player_stones[:, 2].astype(np.float32)  # (3, ) e.g., [1., 0., 1.] -> alive, dead, alive
+    return np.concatenate([features, turn_indicator]), valid_mask  # (28, ), (3, )
     
-    return np.concatenate([player_stones, opponent_stones, obstacles, turn_indicator]), valid_mask  # (31, ), (3, )
+    
+# def observation_to_input(observation, turn) :
+#     WIDTH = 600
+#     HEIGHT = 600
+    
+#     if(turn == 0) :
+#         player = "black"
+#         opponent = "white"
+#     else :
+#         player = "white"
+#         opponent = "black"
+    
+#     player_stones = np.array(observation[player], dtype=np.float32)
+#     player_stones = player_stones.flatten()  # (9, )
+    
+#     # Sort opponent stones by y-coordinate
+#     opponent_stones = np.array(observation[opponent], dtype=np.float32)
+#     opponent_stones = sorted(opponent_stones, key=lambda x: (-x[2], x[1])) # alive first, then by y-coordinate
+#     opponent_stones = np.array(opponent_stones, dtype=np.float32).flatten()  # (9, )
+    
+#     obstacles = np.array(observation["obstacles"], dtype=np.float32).flatten()  # (12, )
+    
+#     # Normalize
+#     player_stones[0::3] /= WIDTH
+#     player_stones[1::3] /= HEIGHT
+#     opponent_stones[0::3] /= WIDTH
+#     opponent_stones[1::3] /= HEIGHT
+#     obstacles[0::4] /= WIDTH
+#     obstacles[1::4] /= HEIGHT
+#     obstacles[2::4] /= WIDTH
+#     obstacles[3::4] /= HEIGHT
+    
+#     # if(turn == 1) :
+#     #     for i in range(len(player_stones) // 3) :
+#     #         if(player_stones[i*3+2] == 1) :  # alive stone
+#     #             player_stones[i*3+0] = 1.0 - player_stones[i*3+0]  # x
+#     #     for i in range(len(opponent_stones) // 3) :
+#     #         if(opponent_stones[i*3+2] == 1) :  # alive stone
+#     #             opponent_stones[i*3+0] = 1.0 - opponent_stones[i*3+0]  # x
+    
+#     # Dead stone processing after normalization
+#     for i in range(len(player_stones) // 3) :
+#         if(player_stones[i*3+2] == 0) :  # dead stone
+#             player_stones[i*3+0] = -1.0  # x
+#             player_stones[i*3+1] = -1.0  # y
+#     for i in range(len(opponent_stones) // 3) :
+#         if(opponent_stones[i*3+2] == 0) :  # dead stone
+#             opponent_stones[i*3+0] = -1.0  # x
+#             opponent_stones[i*3+1] = -1.0  # y
+    
+#     # Dead stone masking
+#     valid_mask = player_stones[2::3]  # (3, ) e.g., [1., 0., 1.] -> alive, dead, alive
+    
+#     turn_indicator = np.array([float(turn)], dtype=np.float32)  # (1, )
+    
+#     return np.concatenate([player_stones, opponent_stones, obstacles, turn_indicator]), valid_mask  # (31, ), (3, )
 
 class ClipLayer(keras.layers.Layer) :
     def __init__(self, min_value, max_value, **kwargs) :
@@ -330,8 +411,8 @@ def get_aiming_reward(observation, turn, selection, angle) :
         cosine_similarity = np.cos(np.radians(target_angle_degree - angle))
         max_cosine_similarity = max(max_cosine_similarity, cosine_similarity)
         
-    # -0.2 ~ +0.2
-    return 0.2 * max_cosine_similarity
+    # -0.003 ~ +0.003
+    return 0.003 * max_cosine_similarity
 
 # return : {is_there_black_collision, is_there_white_collision}
 def collision_detected(observation_before, observation_after) :
@@ -378,7 +459,7 @@ class Agent(kym.Agent) :
         elif(model) :
             self.actor, self.critic = model
         else :
-            self.actor, self.critic = build_actor_critic_model((31, ))  # input shape (31, )
+            self.actor, self.critic = build_actor_critic_model((28, ))  # input shape (28, )
 
     def save(self, path: str) :
         self.actor.save(path + "_actor.keras")
@@ -462,10 +543,14 @@ class Agent(kym.Agent) :
         }
     
 class BlackAgent(Agent) :
-    pass
+    def act(self, observation: Any, info: Dict, deterministic: bool = True) :
+        if(observation["turn"] != 0) : return None
+        return super().act(observation, info, deterministic)
 
 class WhiteAgent(Agent) :
-    pass
+    def act(self, observation: Any, info: Dict, deterministic: bool = True) :
+        if(observation["turn"] != 1) : return None
+        return super().act(observation, info, deterministic)
 # -------- End of Agent Class --------
 
 # ---------- Training & Testing ----------
@@ -486,8 +571,8 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         white_critic_model = keras.models.load_model(resume_path_white + "_critic.keras", custom_objects=custom_objects, safe_mode=False)
     else :
         print("Starting training from scratch ...")
-        black_actor_model, black_critic_model = build_actor_critic_model((31, ))
-        white_actor_model, white_critic_model = build_actor_critic_model((31, ))
+        black_actor_model, black_critic_model = build_actor_critic_model((28, ))
+        white_actor_model, white_critic_model = build_actor_critic_model((28, ))
     # shared_model = (actor_model, critic_model)
     # black_agent = BlackAgent(model=shared_model)
     # white_agent = WhiteAgent(model=shared_model)
@@ -507,7 +592,7 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
     episodes = 500000
     
     # Open CSV file for logging
-    log_filename = "training_log_v23.csv"
+    log_filename = "training_log_v24.csv"
     file_mode = 'a' if (resume_path_black and resume_path_white) and os.path.exists(log_filename) else 'w'
     with open(log_filename, mode=file_mode, newline='') as log_file:
         log_writer = csv.writer(log_file)
@@ -620,10 +705,10 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
             # Reward by Aiming
             aiming_reward = get_aiming_reward(observation, turn, action["index"], action["angle"])
             if(turn == 0) :
-                if(aiming_reward > 0.18) : black_correct_aim_count += 1
+                if(aiming_reward > 0.0025) : black_correct_aim_count += 1
                 black_records["rewards"][-1] += aiming_reward
             else :
-                if(aiming_reward > 0.18) : white_correct_aim_count += 1
+                if(aiming_reward > 0.0025) : white_correct_aim_count += 1
                 white_records["rewards"][-1] += aiming_reward
             
             # distance_before = nearest_distance(observation, turn, action["index"])
@@ -744,11 +829,11 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
         print(f"Episode {episode + 1}/{start_episode + episodes} completed | Winner: {winner:5s}. | Black Loss: {loss_black_val:10.4f} | White Loss: {loss_white_val:10.4f} | Steps: {step_count:10d} | Phase: {phase:15s}", end="\r")
         
         if((episode + 1) % 10000 == 0) :  # temporary save
-            black_agent.save(f"./moka_black_v23_{episode + 1}")
-            white_agent.save(f"./moka_white_v23_{episode + 1}")
+            black_agent.save(f"./moka_black_v24_{episode + 1}")
+            white_agent.save(f"./moka_white_v24_{episode + 1}")
     
-    black_agent.save("./moka_black_v23")
-    white_agent.save("./moka_white_v23")
+    black_agent.save("./moka_black_v24")
+    white_agent.save("./moka_white_v24")
     env.close()
 
 def test() :
@@ -758,8 +843,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v23_50000")
-    white_agent = WhiteAgent.load("./moka_white_v23_50000")
+    black_agent = BlackAgent.load("./moka_black_v24")
+    white_agent = WhiteAgent.load("./moka_white_v24")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
