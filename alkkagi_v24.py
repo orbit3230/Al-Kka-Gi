@@ -842,8 +842,8 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v24_10000")
-    white_agent = WhiteAgent.load("./moka_white_v24_10000")
+    black_agent = BlackAgent.load("./moka_black_v24_90000")
+    white_agent = WhiteAgent.load("./moka_white_v24_90000")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -860,6 +860,8 @@ def test() :
 # ---------- End of Training & Testing ----------
     
 if __name__ == "__main__" :
-    # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
+    black_agent = BlackAgent.load("./moka_black_v24_90000")
+    white_agent = WhiteAgent.load("./moka_white_v24_90000")
+    kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True, agent=white_agent, agent_turn=1).play()
     # train()
-    test()
+    # test()
