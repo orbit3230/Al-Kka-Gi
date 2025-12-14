@@ -7,6 +7,7 @@ from tensorflow import keras
 import tensorflow_probability as tfp
 import csv
 import os
+from agent import *
 
 # Method only for Manual Play
 # kymnasium.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True).play()
@@ -482,13 +483,13 @@ class Agent(kym.Agent) :
         selection_logits, power_mean, power_std_dev, angle_mean, angle_std_dev = self.actor([state_tensor, mask_tensor])
         
         # debug
-        print("turn : ", 'black' if turn == 0 else 'white')
-        print("selection_logits : ", selection_logits.numpy()[0])
-        print("power_mean : ", power_mean.numpy()[0])
-        print("power_std_dev : ", power_std_dev.numpy()[0])
-        print("angle_mean : ", angle_mean.numpy()[0])
-        print("angle_std_dev : ", angle_std_dev.numpy()[0])
-        print("---------------------------")
+        # print("turn : ", 'black' if turn == 0 else 'white')
+        # print("selection_logits : ", selection_logits.numpy()[0])
+        # print("power_mean : ", power_mean.numpy()[0])
+        # print("power_std_dev : ", power_std_dev.numpy()[0])
+        # print("angle_mean : ", angle_mean.numpy()[0])
+        # print("angle_std_dev : ", angle_std_dev.numpy()[0])
+        # print("---------------------------")
         
         # Stone Selection
         if(deterministic) : selected_index = np.argmax(selection_logits.numpy()[0])
@@ -838,30 +839,40 @@ def train(resume_path_black = None, resume_path_white = None, start_episode = 0)
 def test() :
     env = gym.make(
         id = "kymnasium/AlKkaGi-3x3-v0",
-        render_mode = "human",
+        render_mode = "rgb_array",
         bgm = True,
         obs_type = "custom"
     )
     black_agent = BlackAgent.load("./moka_black_v24_180000")
-    white_agent = WhiteAgent.load("./moka_white_v24_180000")
+    # black_agent = YourBlackAgent.load("./last.pt")
+    # white_agent = WhiteAgent.load("./moka_white_v24_180000")
+    white_agent = YourWhiteAgent.load("./last.pt")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
+        step = 0
         while not done :
+            step += 1
+            print(f"Test Game Step: {step}", end="\r")
             turn = observation["turn"]
             if(turn == 0) : action = black_agent.act(observation, info, deterministic=True)
-            else : action = white_agent.act(observation, info, deterministic=True)
+            # if(turn == 0) : action = black_agent.act(observation, info)
+            else : action = white_agent.act(observation, info)
+            # else : action = white_agent.act(observation, info, deterministic=True)
             observation, _, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             
-        print(f"{_ + 1}/10 games played.")
+        print(f"\n{_ + 1}/10 games played.")
+        print("Winner : ", who_is_the_winner(observation))
     
     env.close()
 # ---------- End of Training & Testing ----------
     
 if __name__ == "__main__" :
-    black_agent = BlackAgent.load("./moka_black_v24_180000")
-    white_agent = WhiteAgent.load("./moka_white_v24_180000")
-    kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True, agent=black_agent, agent_turn=0).play()
+    # black_agent = BlackAgent.load("./moka_black_v24_180000")
+    # white_agent = WhiteAgent.load("./moka_white_v24_180000")
+    # black_agent = YourBlackAgent.load("./last.pt")
+    # white_agent = YourWhiteAgent.load("./last.pt")
+    # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True, agent=black_agent, agent_turn=0).play()
     # train()
-    # test()
+    test()
