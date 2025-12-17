@@ -843,10 +843,10 @@ def test() :
         bgm = True,
         obs_type = "custom"
     )
-    black_agent = BlackAgent.load("./moka_black_v24_180000")
+    black_agent = BlackAgent.load("./moka_black_v24_200000")
     # black_agent = YourBlackAgent.load("./last.pt")
-    # white_agent = WhiteAgent.load("./moka_white_v24_180000")
-    white_agent = YourWhiteAgent.load("./last.pt")
+    white_agent = WhiteAgent.load("./moka_white_v24_200000")
+    # white_agent = YourWhiteAgent.load("./last.pt")
     for _ in range(10) :    
         observation, info = env.reset()
         done = False
@@ -857,8 +857,8 @@ def test() :
             turn = observation["turn"]
             if(turn == 0) : action = black_agent.act(observation, info, deterministic=True)
             # if(turn == 0) : action = black_agent.act(observation, info)
-            else : action = white_agent.act(observation, info)
-            # else : action = white_agent.act(observation, info, deterministic=True)
+            # else : action = white_agent.act(observation, info)
+            else : action = white_agent.act(observation, info, deterministic=True)
             observation, _, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             
@@ -869,10 +869,10 @@ def test() :
 # ---------- End of Training & Testing ----------
     
 if __name__ == "__main__" :
-    # black_agent = BlackAgent.load("./moka_black_v24_180000")
-    # white_agent = WhiteAgent.load("./moka_white_v24_180000")
+    black_agent = BlackAgent.load("./moka_black_v24_350000")
+    white_agent = WhiteAgent.load("./moka_white_v24_350000")
     # black_agent = YourBlackAgent.load("./last.pt")
     # white_agent = YourWhiteAgent.load("./last.pt")
-    # kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True, agent=black_agent, agent_turn=0).play()
+    kym.alkkagi.ManualPlayWrapper("kymnasium/AlKkaGi-3x3-v0", debug=True, agent=black_agent, agent_turn=0).play()
     # train()
-    test()
+    # test()
